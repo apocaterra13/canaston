@@ -108,8 +108,9 @@ export function requireCardsInHand(
  * A valid combination for laying down (trío):
  * - At least 3 cards total.
  * - All non-wild cards share the same rank.
- * - At most 2 wilds allowed.
- * - At least 2 natural (non-wild) cards (section 9.2).
+ * - At most 2 wilds allowed (unless it is a mono-only combination).
+ * - At least 2 natural (non-wild) cards (section 9.2) — EXCEPT for a
+ *   mono-only combination (canasta de monos) where all cards are wildcards.
  * - No honors or tapas.
  */
 export function validateMeld(cards: Card[]): ActionResult<{ rank: Rank; wildCount: number }> {
@@ -125,6 +126,14 @@ export function validateMeld(cards: Card[]): ActionResult<{ rank: Rank; wildCoun
     return err("HONORS_NOT_IN_MELD", "Honors (3 red) and Tapas (3 black) cannot be part of a meld.");
   }
 
+  // Mono-only combination (canasta de monos): all cards are wildcards (2s and/or Jokers).
+  // The 2-natural minimum and 2-wild maximum do NOT apply here.
+  if (naturals.length === 0) {
+    const rank: Rank = wilds.some((c) => c.rank === "JOKER") ? "JOKER" : "2";
+    return ok({ rank, wildCount: wilds.length });
+  }
+
+  // Mixed combination: section 9.2 — at least 2 naturals required.
   if (naturals.length < 2) {
     return err(
       "INSUFFICIENT_NATURALS",
@@ -180,7 +189,9 @@ export function validateAddToMeld(
     return ok(undefined);
   }
 
-  if (existingWilds + newWilds > 2) {
+  // Mono melds (rank "2" or "JOKER") are all-wildcard combinations — no wild cap.
+  const isMonoMeld = meld.rank === "2" || meld.rank === "JOKER";
+  if (!isMonoMeld && existingWilds + newWilds > 2) {
     return err(
       "TOO_MANY_WILDS",
       `Adding these cards would exceed the 2-wild limit (current ${existingWilds}, adding ${newWilds}).`,
