@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "commonjs",
+    "target": "ES2020",
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "baseUrl": "."
+  },
+  "include": [
+    "tests/**/*.ts",
+    "src/engine/**/*.ts",
+    "engine/**/*.ts"
+  ]
+}
