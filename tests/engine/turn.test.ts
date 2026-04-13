@@ -130,33 +130,72 @@ function makeDrawnGame(opts: {
 // takePilon — core: cards must be added to hand
 // ---------------------------------------------------------------------------
 
-describe('takePilon — pilon cards added to hand', () => {
-  it('adds all pilon cards to the player hand', () => {
-    const topCard   = makeCard('top_7h', '7', 'hearts');
-    const mid       = makeCard('mid_Kh', 'K', 'hearts');
-    const bottom    = makeCard('bot_Ah', 'A', 'hearts');
-    const match1    = makeCard('m1_7d', '7', 'diamonds');
-    const match2    = makeCard('m2_7c', '7', 'clubs');
+describe('takePilon — mandatory meld created and cards routed correctly', () => {
+  it('auto-meld contains match cards + top card', () => {
+    const topCard = makeCard('top_7h', '7', 'hearts');
+    const mid     = makeCard('mid_Kh', 'K', 'hearts');
+    const bottom  = makeCard('bot_Ah', 'A', 'hearts');
+    const match1  = makeCard('m1_7d', '7', 'diamonds');
+    const match2  = makeCard('m2_7c', '7', 'clubs');
 
     const game = makeGame({
-      pilon:  [bottom, mid, topCard],  // topCard is last element (top of pile)
+      pilon: [bottom, mid, topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
     });
 
-    const handBefore = game.players['p1'].hand.length;
     const result = takePilon(game, 'p1', [match1.id, match2.id]);
-
     expect(result.ok).toBe(true);
-    // Hand grows by: pilon cards (3) minus match cards removed (2) = +1
-    const handAfter = game.players['p1'].hand;
-    expect(handAfter.length).toBe(handBefore - 2 + 3); // removed 2 match, added 3 pilon
-    expect(handAfter).toContain(topCard);
-    expect(handAfter).toContain(mid);
-    expect(handAfter).toContain(bottom);
+    if (!result.ok) return;
+
+    const meld = result.data.autoMeld;
+    expect(meld.rank).toBe('7');
+    expect(meld.cards).toContain(topCard);
+    expect(meld.cards).toContain(match1);
+    expect(meld.cards).toContain(match2);
+    expect(meld.cards).toHaveLength(3);
   });
 
-  it('returns the pilon cards in the result payload', () => {
+  it('meld is placed on the team table', () => {
+    const topCard = makeCard('top_7h', '7', 'hearts');
+    const match1  = makeCard('m1_7d', '7', 'diamonds');
+    const match2  = makeCard('m2_7c', '7', 'clubs');
+
+    const game = makeGame({ pilon: [topCard], pilonState: 'NORMAL', hand: [match1, match2] });
+    takePilon(game, 'p1', [match1.id, match2.id]);
+
+    const team = game.teams['TEAM_NS'];
+    expect(team.table.melds).toHaveLength(1);
+    expect(team.table.melds[0].rank).toBe('7');
+  });
+
+  it('only sub-top pilon cards go to hand (top card goes to meld)', () => {
+    const topCard = makeCard('top_7h', '7', 'hearts');
+    const mid     = makeCard('mid_Kh', 'K', 'hearts');
+    const bottom  = makeCard('bot_Ah', 'A', 'hearts');
+    const match1  = makeCard('m1_7d', '7', 'diamonds');
+    const match2  = makeCard('m2_7c', '7', 'clubs');
+
+    const game = makeGame({
+      pilon: [bottom, mid, topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2],
+    });
+
+    takePilon(game, 'p1', [match1.id, match2.id]);
+
+    const hand = game.players['p1'].hand;
+    // mid and bottom go to hand
+    expect(hand).toContain(mid);
+    expect(hand).toContain(bottom);
+    // top card goes to meld, NOT hand
+    expect(hand).not.toContain(topCard);
+    // match cards go to meld, NOT hand
+    expect(hand.find(c => c.id === match1.id)).toBeUndefined();
+    expect(hand.find(c => c.id === match2.id)).toBeUndefined();
+  });
+
+  it('result.pilonCards contains only the sub-top cards (what went to hand)', () => {
     const topCard = makeCard('top_5h', '5', 'hearts');
     const other   = makeCard('oth_5d', '5', 'diamonds');
     const match1  = makeCard('m1_5c', '5', 'clubs');
@@ -172,9 +211,10 @@ describe('takePilon — pilon cards added to hand', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.pilonCards).toHaveLength(2);
-      expect(result.data.pilonCards).toContainEqual(topCard);
+      // Only 'other' went to hand; topCard went to autoMeld
+      expect(result.data.pilonCards).toHaveLength(1);
       expect(result.data.pilonCards).toContainEqual(other);
+      expect(result.data.pilonCards).not.toContainEqual(topCard);
     }
   });
 
@@ -237,7 +277,9 @@ describe('takePilon — triado state', () => {
     const result = takePilon(game, 'p1', [match1.id, match2.id, match3.id]);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(game.players['p1'].hand).toContain(topCard);
+      // topCard goes into the auto-meld, not the hand
+      expect(result.data.autoMeld.cards).toContain(topCard);
+      expect(game.players['p1'].hand).not.toContain(topCard);
     }
   });
 
@@ -343,7 +385,8 @@ describe('takePilon — turn context', () => {
 
     expect(game.turn!.tookPilon).toBe(true);
     expect(game.turn!.phase).toBe('TOOK_PILON');
-    expect(game.turn!.drawnCards).toContain(topCard);
+    // drawnCards contains sub-top pilon cards (what went to hand); topCard went to autoMeld
+    expect(game.turn!.drawnCards).not.toContain(topCard);
   });
 });
 

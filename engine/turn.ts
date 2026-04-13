@@ -196,7 +196,7 @@ export function takePilon(
   game: GameStateData,
   playerId: PlayerId,
   matchCardIds: string[], // cards from hand to match the top of pilon
-): ActionResult<{ pilonCards: Card[] }> {
+): ActionResult<{ pilonCards: Card[]; autoMeld: Meld }> {
   const stateCheck = requireState(game, "TURNO_NORMAL");
   if (!stateCheck.ok) return stateCheck;
 
@@ -248,28 +248,52 @@ export function takePilon(
     }
   }
 
-  // Take the entire pilon
-  const pilonCards = [...round.pilon];
+  // Separate top card (will anchor the mandatory meld) from the rest of the pile.
+  const pilonRest = round.pilon.slice(0, -1); // all cards below the top
+
+  // Clear the pilon
   round.pilon      = [];
   round.pilonState = "EMPTY";
   round.tapaActive = false;
 
-  // Remove match cards from hand
-  const player = game.players[playerId];
+  const player        = game.players[playerId];
+  const { team }      = getTeamForPlayer(game, playerId);
+
+  // Remove match cards from hand — they go into the mandatory meld.
   removeCardsFromHandMutate(player, matchCardIds);
 
-  // Add all pilon cards to hand (sorted)
-  player.hand.push(...pilonCards);
+  // Create the mandatory meld: match cards + top card (section 8.1).
+  const meldCards: Card[] = [...matchCards, topCard];
+  const meldRank          = topCard.rank;
+  const meld: Meld = {
+    id:    newMeldId(),
+    rank:  meldRank,
+    cards: meldCards,
+  };
+  team.table.melds.push(meld);
+
+  // Track for bajada counting (same logic as layMeld).
+  if (!team.hasBajado) {
+    game.turn!.bajadaMeldIds.push(meld.id);
+  }
+
+  // Activate mono-obligado if this is a wildcard meld (section 9.3).
+  if (meldRank === "2" || meldRank === "JOKER") {
+    team.monoObligado = true;
+  }
+
+  // Add the remaining pilon cards to hand (top card already in the meld).
+  player.hand.push(...pilonRest);
   player.hand = sortHand(player.hand);
 
-  // Update turn context
-  const ctx        = game.turn!;
-  ctx.tookPilon    = true;
+  // Update turn context.
+  const ctx           = game.turn!;
+  ctx.tookPilon       = true;
   ctx.pilonMatchCards = matchCards;
-  ctx.drawnCards   = pilonCards;
-  ctx.phase        = "TOOK_PILON";
+  ctx.drawnCards      = pilonRest; // cards that went to hand (for NEW badge)
+  ctx.phase           = "TOOK_PILON";
 
-  return ok({ pilonCards });
+  return ok({ pilonCards: pilonRest, autoMeld: meld });
 }
 
 // ---------------------------------------------------------------------------
@@ -324,21 +348,6 @@ export function layMeld(
 
   // Bajada logic (section 9.1)
   const isBajada = !team.hasBajado;
-  if (isBajada) {
-    // The cards used to take the pilon do NOT count toward bajada total
-    const pilonMatchIds = new Set((game.turn!.pilonMatchCards ?? []).map((c) => c.id));
-    const countableCards = cards.filter((c) => !pilonMatchIds.has(c.id));
-    const points         = sumCardPoints(countableCards);
-
-    // We don't enforce bajada minimum here; the caller should batch multiple melds
-    // and call validateBajadaBatch. But if opts.isBajadaInitial is true we check.
-    if (opts.isBajadaInitial) {
-      // Caller asserts this is the completing bajada action
-      // validate minimum will be done after all melds are compiled
-    }
-  } else {
-    // Team already has bajada — free to play
-  }
 
   // Remove cards from hand
   removeCardsFromHandMutate(game.players[playerId], opts.cardIds);
@@ -383,16 +392,12 @@ export function commitBajada(
 
   // Only count melds laid by THIS player in THIS turn (bajadaMeldIds).
   // This prevents partner melds from previous turns from inflating the total.
-  const ctx           = game.turn!;
-  const bajadaMeldSet = new Set(ctx.bajadaMeldIds);
-  const pilonMatchIds = new Set((ctx.pilonMatchCards ?? []).map((c) => c.id));
+  const bajadaMeldSet = new Set(game.turn!.bajadaMeldIds);
 
   let total = 0;
   for (const meld of team.table.melds) {
     if (!bajadaMeldSet.has(meld.id)) continue;
-    for (const c of meld.cards) {
-      if (!pilonMatchIds.has(c.id)) total += c.points;
-    }
+    for (const c of meld.cards) total += c.points;
   }
 
   if (total < minimum) {
