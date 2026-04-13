@@ -91,6 +91,10 @@ export default function GameScreen() {
   const teamNS        = game.teams['TEAM_NS'];
   const teamEW        = game.teams['TEAM_EW'];
 
+  function teamLabel(team: typeof teamNS) {
+    return team.playerIds.map((pid) => game.players[pid]?.name ?? pid).join(' & ');
+  }
+
   const pilonCards    = round?.pilon ?? [];
   const pilonTop      = pilonCards.length > 0 ? pilonCards[pilonCards.length - 1] : null;
   const pilonState    = round?.pilonState ?? 'EMPTY';
@@ -346,7 +350,7 @@ export default function GameScreen() {
       {/* ── Scoreboard ───────────────────────────────────────────────── */}
       <View style={styles.scoreboard}>
         <ScoreChip
-          label={teamNS?.name ?? 'Norte-Sur'}
+          label={teamNS ? teamLabel(teamNS) : '—'}
           score={teamNS?.globalScore ?? 0}
           color={TEAM_NS_COLOR}
         />
@@ -355,7 +359,7 @@ export default function GameScreen() {
           <Text style={styles.stockText}>📦 {stockCount}</Text>
         </View>
         <ScoreChip
-          label={teamEW?.name ?? 'Este-Oeste'}
+          label={teamEW ? teamLabel(teamEW) : '—'}
           score={teamEW?.globalScore ?? 0}
           color={TEAM_EW_COLOR}
         />
@@ -366,8 +370,8 @@ export default function GameScreen() {
 
         {/* Active team table first, opponent below */}
         {currentTeamId === 'TEAM_EW'
-          ? teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR, true)
-          : teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR, true)}
+          ? teamEW && renderTeamTable(teamEW, teamLabel(teamEW), TEAM_EW_COLOR, true)
+          : teamNS && renderTeamTable(teamNS, teamLabel(teamNS), TEAM_NS_COLOR, true)}
 
         {/* Pilon + Stock */}
         <View style={styles.pilonStockRow}>
@@ -413,8 +417,8 @@ export default function GameScreen() {
 
         {/* Opponent team table */}
         {currentTeamId === 'TEAM_EW'
-          ? teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR)
-          : teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR)}
+          ? teamNS && renderTeamTable(teamNS, teamLabel(teamNS), TEAM_NS_COLOR)
+          : teamEW && renderTeamTable(teamEW, teamLabel(teamEW), TEAM_EW_COLOR)}
 
         {/* Spacer for hand area */}
         <View style={{ height: 16 }} />
