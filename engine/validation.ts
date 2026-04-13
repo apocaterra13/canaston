@@ -176,22 +176,35 @@ export function validateAddToMeld(
     return err("HONORS_NOT_IN_MELD", "Cannot add honor or tapa to a meld.");
   }
 
+  // A mono meld/canasta (rank "2" or "JOKER") is a wildcard-only combination.
+  // Any wildcard (joker or pato) may be added or burned into it.
+  const isMonoMeld = meld.rank === "2" || meld.rank === "JOKER";
+
+  if (isMonoMeld) {
+    // All added cards must be wildcards.
+    if (newCards.some((c) => !isMono(c))) {
+      return err("MONO_MELD_ONLY_WILDS", "Only wildcards (jokers and patos) can be added to a mono meld.");
+    }
+    // No further restrictions — burn or extend freely.
+    return ok(undefined);
+  }
+
+  // Normal meld: new cards must match the meld rank (naturals only in this check).
   const newNaturals = newCards.filter((c) => !isMono(c));
   if (newNaturals.some((c) => c.rank !== meld.rank)) {
     return err("RANK_MISMATCH", `All cards added to meld must have rank ${meld.rank}.`);
   }
 
   if ("closed" in meld && meld.closed) {
-    // Allow burning — no wild check for burning extra naturals on a closed canasta
+    // Burning onto a closed normal canasta: only same-rank naturals allowed, no wilds.
     if (newWilds > 0) {
       return err("CANASTA_CLOSED_NO_WILDS", "Cannot add wilds to a closed canasta.");
     }
     return ok(undefined);
   }
 
-  // Mono melds (rank "2" or "JOKER") are all-wildcard combinations — no wild cap.
-  const isMonoMeld = meld.rank === "2" || meld.rank === "JOKER";
-  if (!isMonoMeld && existingWilds + newWilds > 2) {
+  // Open normal meld: enforce 2-wild cap.
+  if (existingWilds + newWilds > 2) {
     return err(
       "TOO_MANY_WILDS",
       `Adding these cards would exceed the 2-wild limit (current ${existingWilds}, adding ${newWilds}).`,

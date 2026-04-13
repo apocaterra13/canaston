@@ -138,10 +138,48 @@ describe('validateAddToMeld — adding to a mono meld', () => {
     expect(r.ok).toBe(true);
   });
 
+  it('allows burning a pato into a closed mono canasta ranked JOKER', () => {
+    const canasta: import('../../engine/types').Canasta = {
+      id: 'c1', rank: 'JOKER',
+      cards: [joker('j1'), joker('j2'), joker('j3'), pato('p1'), pato('p2'), pato('p3'), joker('j4')],
+      type: 'MONO', closed: true, burned: [],
+    };
+    const r = validateAddToMeld(canasta, [pato('p4')]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('allows burning a joker into a closed mono canasta ranked "2"', () => {
+    const canasta: import('../../engine/types').Canasta = {
+      id: 'c2', rank: '2',
+      cards: [pato('p1'), pato('p2'), pato('p3'), pato('p4'), joker('j1'), joker('j2'), joker('j3')],
+      type: 'MONO', closed: true, burned: [],
+    };
+    const r = validateAddToMeld(canasta, [joker('j4')]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects adding a natural card to a mono meld', () => {
+    const existing = makeMeld('JOKER', [joker('j1'), joker('j2'), pato('p1')]);
+    const r = validateAddToMeld(existing, [nat('K', 'k1')]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('MONO_MELD_ONLY_WILDS');
+  });
+
   it('still enforces the 2-wild cap on normal melds', () => {
     const existing = makeMeld('K', [nat('K', 'a'), nat('K', 'b'), pato('p1'), joker('j1')]);
     const r = validateAddToMeld(existing, [pato('p2')]);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('TOO_MANY_WILDS');
+  });
+
+  it('still blocks wilds from being burned into a closed normal canasta', () => {
+    const canasta: import('../../engine/types').Canasta = {
+      id: 'c3', rank: 'K',
+      cards: [nat('K','a'), nat('K','b'), nat('K','c'), nat('K','d'), nat('K','e'), nat('K','f'), nat('K','g')],
+      type: 'LIMPIA', closed: true, burned: [],
+    };
+    const r = validateAddToMeld(canasta, [pato('p1')]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('CANASTA_CLOSED_NO_WILDS');
   });
 });
