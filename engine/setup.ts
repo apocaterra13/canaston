@@ -12,7 +12,7 @@ import type {
   Team,
   TeamId,
 } from "./types";
-import { buildFullDeck, drawCards, isMono, isHonor, rankValue, shuffle, sortHand } from "./deck";
+import { buildFullDeck, drawCards, isMono, isHonor, isTapa, rankValue, shuffle, sortHand } from "./deck";
 import { err, ok, requireState } from "./validation";
 
 // ---------------------------------------------------------------------------
@@ -381,22 +381,22 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
     return err("DECK_EXHAUSTED", "No cards left in stock to flip.");
   }
 
-  // Flip one card
-  let flippedCard = drawCards(stock, 1)[0];
-  let buried = 0;
+  // Flip one card and resolve (section 6.3).
+  // A 3 — red (HONOR) or black (TAPA) — can NEVER open the pilon.
+  // Keep drawing replacement cards until a non-3 is found.
+  const firstFlip = drawCards(stock, 1)[0];
+  const resolved  = resolveRepartidorCard(firstFlip, stock);
+  const pilonCard = resolved.pilonCard;
+  const buried    = resolved.buried;
 
-  // Section 6.3: handle the flipped card
-  const resolved = resolveRepartidorCard(flippedCard, stock);
-  buried         = resolved.buried;
-
-  // Set pilon with the resolved top card (the flipped card stays on top)
-  round.pilon      = [flippedCard];
+  // Set pilon with the resolved opening card
+  round.pilon      = [pilonCard];
   round.pilonState = "NORMAL";
 
-  if (isMono(flippedCard)) {
+  if (isMono(pilonCard)) {
     round.pilonState = "TRIADO";
   }
-  if (flippedCard.category === "TAPA") {
+  if (pilonCard.category === "TAPA") {
     round.pilonState = "TAPA";
     round.tapaActive = true;
   }
@@ -417,7 +417,7 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
   round.currentTurnIndex = round.picadorIndex;
   game.state             = "TURNO_NORMAL";
 
-  return ok({ flippedCard, cardsBuriedUnderPilon: buried });
+  return ok({ flippedCard: pilonCard, cardsBuriedUnderPilon: buried });
 }
 
 // ---------------------------------------------------------------------------
@@ -425,43 +425,38 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
 // ---------------------------------------------------------------------------
 
 function resolveRepartidorCard(
-  card: import("./types").Card,
+  firstCard: import("./types").Card,
   stock: import("./types").Card[],
-): { buried: number } {
-  const rank = card.rank;
+): { pilonCard: import("./types").Card; buried: number } {
+  let card   = firstCard;
   let buried = 0;
 
-  if (isHonor(card)) {
-    // 3 rojo → keep flipping until non-honor (recursive-ish)
-    // For simplicity, consume as many cards from stock as needed
-    // and bury them, but track the final non-honor card
-    // The spec says "voltear la siguiente carta y repetir"
-    // We bury the chain and place the final card on pilon
-    // (implementation: bury until non-3-red found)
-    while (stock.length > 0) {
-      const next = drawCards(stock, 1)[0];
-      buried++;
-      if (!isHonor(next)) break;
-    }
-    return { buried };
+  // A 3 — red (HONOR) or black (TAPA) — can never open the pilon.
+  // Keep drawing until we land on a non-3 card.
+  while ((isHonor(card) || isTapa(card)) && stock.length > 0) {
+    card = drawCards(stock, 1)[0];
+    buried++;
   }
 
-  // Numeric / face cards: bury that many cards face-down
-  const buryCounts: Record<string, number> = {
+  // If stock ran out and the final card is still a 3, we have no valid opener.
+  // Edge case: just use it anyway (extremely unlikely in a real deck).
+
+  // Apply burying rules based on the opening card's rank.
+  const buryCounts: Partial<Record<string, number>> = {
     "4": 4,  "5": 5,  "6": 6,  "7": 7,
     "8": 8,  "9": 9,  "10": 10,
     "J": 11, "Q": 12, "K": 13, "A": 14,
     "2": 20, "JOKER": 25,
-    "3": 0,  // shouldn't hit here (handled above)
   };
 
-  buried = buryCounts[rank] ?? 0;
-  // Actually bury that many cards (draw from stock and discard conceptually)
-  const toBury = Math.min(buried, stock.length);
-  drawCards(stock, toBury); // remove from stock; they are simply face-down under pilon
-  buried = toBury;
+  const extra  = buryCounts[card.rank] ?? 0;
+  const toBury = Math.min(extra, stock.length);
+  if (toBury > 0) {
+    drawCards(stock, toBury); // remove face-down cards from stock
+    buried += toBury;
+  }
 
-  return { buried };
+  return { pilonCard: card, buried };
 }
 
 // ---------------------------------------------------------------------------

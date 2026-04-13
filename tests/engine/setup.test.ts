@@ -4,6 +4,9 @@ import {
   startSetup,
   startSorteo,
   resolveSorteo,
+  executePicada,
+  executeReparto,
+  executeInicioRonda,
 } from '../../engine/setup';
 import type { Card, GameStateData } from '../../engine/types';
 
@@ -129,5 +132,100 @@ describe('resolveSorteo — turn order always alternates teams', () => {
     expect(game.playerTeam[p1]).toBe(game.playerTeam[p3]);
     // Teams must differ
     expect(game.playerTeam[p0]).not.toBe(game.playerTeam[p1]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// executeInicioRonda — initial pilon card can never be a 3
+// ---------------------------------------------------------------------------
+
+describe('executeInicioRonda — initial pilon card', () => {
+  /** Build a game ready for executeInicioRonda with a controlled stock. */
+  function buildReadyGame(stockCards: Card[]) {
+    const game = buildSorteoGame();
+    // Seed sorteo to get consistent teams/picador
+    seedSorteoCards(game, {
+      norte: makeCard('A', 'c_norte'),
+      este:  makeCard('K', 'c_este'),
+      sur:   makeCard('Q', 'c_sur'),
+      oeste: makeCard('J', 'c_oeste'),
+    });
+    const r1 = resolveSorteo(game);
+    if (!r1.ok) throw new Error('resolveSorteo failed');
+    const { turnOrder, picadorId, repartidorId } = r1.data;
+    const r2 = executePicada(game, turnOrder, picadorId, repartidorId);
+    if (!r2.ok) throw new Error('executePicada failed');
+    const r3 = executeReparto(game);
+    if (!r3.ok) throw new Error('executeReparto failed');
+
+    // Override the stock with our controlled cards
+    game.round!.stock = stockCards;
+    game.state = 'INICIO_RONDA';
+
+    return game;
+  }
+
+  function card3red(id: string): Card {
+    return { id, rank: '3', suit: 'hearts', category: 'HONOR', points: 0, deckIndex: 0 };
+  }
+
+  function card3black(id: string): Card {
+    return { id, rank: '3', suit: 'spades', category: 'TAPA', points: 0, deckIndex: 0 };
+  }
+
+  function cardNormal(rank: Card['rank'], id: string): Card {
+    return { id, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0 };
+  }
+
+  it('uses the first card when it is a normal card', () => {
+    // Stock is drawn from the end (LIFO), so the target card must be last.
+    const seven = cardNormal('7', 'seven');
+    const game  = buildReadyGame([cardNormal('K', 'k'), seven]);
+
+    const result = executeInicioRonda(game);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.flippedCard.id).toBe('seven');
+      expect(game.round!.pilon[0].id).toBe('seven');
+    }
+  });
+
+  it('skips a red 3 (HONOR) and uses the next card', () => {
+    const red3  = card3red('r3');
+    const eight = cardNormal('8', 'eight');
+    // stock: [eight, red3] → red3 is drawn first (pop from end)
+    const game  = buildReadyGame([eight, red3]);
+
+    const result = executeInicioRonda(game);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.flippedCard.category).not.toBe('HONOR');
+      expect(game.round!.pilon[0].category).not.toBe('HONOR');
+    }
+  });
+
+  it('skips a black 3 (TAPA) and uses the next card', () => {
+    const black3 = card3black('b3');
+    const nine   = cardNormal('9', 'nine');
+    const game   = buildReadyGame([nine, black3]);
+
+    const result = executeInicioRonda(game);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.flippedCard.category).not.toBe('TAPA');
+      expect(game.round!.pilon[0].category).not.toBe('TAPA');
+    }
+  });
+
+  it('skips multiple consecutive 3s to find the first valid card', () => {
+    const jack   = cardNormal('J', 'jack');
+    const game   = buildReadyGame([jack, card3black('b3b'), card3red('r3a'), card3red('r3b')]);
+
+    const result = executeInicioRonda(game);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const pilonTop = game.round!.pilon[0];
+      expect(pilonTop.rank).not.toBe('3');
+    }
   });
 });
