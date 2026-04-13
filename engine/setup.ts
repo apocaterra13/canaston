@@ -387,10 +387,12 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
   const firstFlip = drawCards(stock, 1)[0];
   const resolved  = resolveRepartidorCard(firstFlip, stock);
   const pilonCard = resolved.pilonCard;
-  const buried    = resolved.buried;
 
-  // Set pilon with the resolved opening card
-  round.pilon      = [pilonCard];
+  // Buried cards go into the pilon array (face-down, bottom of pile).
+  // The opener is last so pilon[pilon.length - 1] is always the top card.
+  // This way the total pilon count is correct and the player who takes the
+  // pilon naturally receives all cards including the buried ones.
+  round.pilon      = [...resolved.buriedCards, pilonCard];
   round.pilonState = "NORMAL";
 
   if (isMono(pilonCard)) {
@@ -417,7 +419,7 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
   round.currentTurnIndex = round.picadorIndex;
   game.state             = "TURNO_NORMAL";
 
-  return ok({ flippedCard: pilonCard, cardsBuriedUnderPilon: buried });
+  return ok({ flippedCard: pilonCard, cardsBuriedUnderPilon: resolved.buriedCards.length });
 }
 
 // ---------------------------------------------------------------------------
@@ -427,21 +429,17 @@ export function executeInicioRonda(game: GameStateData): ActionResult<InicioRond
 function resolveRepartidorCard(
   firstCard: import("./types").Card,
   stock: import("./types").Card[],
-): { pilonCard: import("./types").Card; buried: number } {
-  let card   = firstCard;
-  let buried = 0;
-
-  // A 3 — red (HONOR) or black (TAPA) — can never open the pilon.
-  // Keep drawing until we land on a non-3 card.
+): { pilonCard: import("./types").Card; buriedCards: import("./types").Card[] } {
+  let card  = firstCard;
+  // Skipped 3s are set aside (not placed under the pilon).
   while ((isHonor(card) || isTapa(card)) && stock.length > 0) {
     card = drawCards(stock, 1)[0];
-    buried++;
   }
 
-  // If stock ran out and the final card is still a 3, we have no valid opener.
-  // Edge case: just use it anyway (extremely unlikely in a real deck).
+  // If stock ran out and the final card is still a 3, use it anyway
+  // (extremely unlikely in a real double-deck game).
 
-  // Apply burying rules based on the opening card's rank.
+  // Draw the face-down cards that go under the opener.
   const buryCounts: Partial<Record<string, number>> = {
     "4": 4,  "5": 5,  "6": 6,  "7": 7,
     "8": 8,  "9": 9,  "10": 10,
@@ -449,14 +447,11 @@ function resolveRepartidorCard(
     "2": 20, "JOKER": 25,
   };
 
-  const extra  = buryCounts[card.rank] ?? 0;
-  const toBury = Math.min(extra, stock.length);
-  if (toBury > 0) {
-    drawCards(stock, toBury); // remove face-down cards from stock
-    buried += toBury;
-  }
+  const extra      = buryCounts[card.rank] ?? 0;
+  const toBury     = Math.min(extra, stock.length);
+  const buriedCards = toBury > 0 ? drawCards(stock, toBury) : [];
 
-  return { pilonCard: card, buried };
+  return { pilonCard: card, buriedCards };
 }
 
 // ---------------------------------------------------------------------------

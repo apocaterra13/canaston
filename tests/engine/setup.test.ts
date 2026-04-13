@@ -187,8 +187,10 @@ describe('executeInicioRonda — initial pilon card', () => {
     const result = executeInicioRonda(game);
     expect(result.ok).toBe(true);
     if (result.ok) {
+      // flippedCard is the opener; it sits on top (last element) of round.pilon
       expect(result.data.flippedCard.id).toBe('seven');
-      expect(game.round!.pilon[0].id).toBe('seven');
+      const pilon = game.round!.pilon;
+      expect(pilon[pilon.length - 1].id).toBe('seven');
     }
   });
 
@@ -275,13 +277,17 @@ describe('executeInicioRonda — cards buried under pilon equals card value', ()
     { rank: 'JOKER', category: 'JOKER',  buried: 25 },
   ];
 
-  it.each(cases)('rank $rank buries $buried cards', ({ rank, category, buried }) => {
+  it.each(cases)('rank $rank buries $buried cards — pilon total = $buried + 1', ({ rank, category, buried }) => {
     const game = buildReadyGame(stockWith(rank, category));
     const result = executeInicioRonda(game);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.flippedCard.rank).toBe(rank);
       expect(result.data.cardsBuriedUnderPilon).toBe(buried);
+      // Pilon array = buried cards (bottom) + opener (top) = buried + 1
+      expect(game.round!.pilon).toHaveLength(buried + 1);
+      // Opener is the last element
+      expect(game.round!.pilon[game.round!.pilon.length - 1].rank).toBe(rank);
     }
   });
 });
