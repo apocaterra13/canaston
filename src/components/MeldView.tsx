@@ -6,7 +6,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { Meld } from '../../engine/types';
-import { sumCardPoints } from '../../engine';
 
 interface MeldViewProps {
   meld: Meld;
@@ -26,12 +25,9 @@ function rankColor(rank: string): string {
 }
 
 export default function MeldView({ meld, onPress, highlighted = false }: MeldViewProps) {
-  const wildCount = meld.cards.filter(
-    (c) => c.category === 'JOKER' || c.category === 'PATO',
-  ).length;
+  const wildCount    = meld.cards.filter((c) => c.category === 'JOKER' || c.category === 'PATO').length;
   const naturalCount = meld.cards.length - wildCount;
-  const points = sumCardPoints(meld.cards);
-  const color = rankColor(meld.rank);
+  const color        = rankColor(meld.rank);
 
   const neededForCanasta = 7 - meld.cards.length;
 
@@ -42,15 +38,14 @@ export default function MeldView({ meld, onPress, highlighted = false }: MeldVie
         <Text style={[styles.rankText, { color }]}>{meld.rank}</Text>
       </View>
 
-      {/* Stats */}
+      {/* Composition: natural count + wild count */}
       <View style={styles.stats}>
-        <Text style={styles.cardCount}>
-          {meld.cards.length} cartas
+        <Text style={styles.naturalCount}>
+          {naturalCount} {meld.rank}
         </Text>
         {wildCount > 0 && (
           <Text style={styles.wildBadge}>🃏×{wildCount}</Text>
         )}
-        <Text style={styles.points}>{points} pts</Text>
       </View>
 
       {/* Progress to canasta */}
@@ -116,17 +111,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
-  cardCount: {
+  naturalCount: {
     color: '#ecf0f1',
     fontSize: 10,
+    fontWeight: '600',
   },
   wildBadge: {
     fontSize: 10,
-  },
-  points: {
-    color: '#f9ca24',
-    fontSize: 10,
-    fontWeight: '600',
   },
   progressRow: {
     flexDirection: 'row',
