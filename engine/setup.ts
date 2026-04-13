@@ -181,14 +181,21 @@ export function resolveSorteo(
   const picadorSeat  = game.seatOrder.indexOf(picadorId);
   const repartidorId = game.seatOrder[(picadorSeat + 1) % 4]; // left of picador
 
-  // Turn order starts from picador going counter-clockwise
-  // We treat the seat order as the table arrangement; CCW = reverse
-  const turnOrder: PlayerId[] = [];
-  let idx = picadorSeat;
-  for (let i = 0; i < 4; i++) {
-    turnOrder.push(game.seatOrder[idx]);
-    idx = (idx + 1) % 4; // section 7.3 says contrario a las agujas = left = +1 in seat order
-  }
+  // Build a turn order that strictly alternates teams: A, B, A, B.
+  // Starting from the picador, the next player must be from the opposing team,
+  // then the picador's partner, then the remaining opponent.
+  // We determine which opponent comes first by their physical seat position
+  // (the one sitting immediately left of the picador around the table).
+  const picadorTeam    = teamNS.includes(picadorId as PlayerId) ? teamNS : teamEW;
+  const partner        = picadorTeam.find(p => p !== picadorId)!;
+  const opponents      = [third.pid, fourth.pid]; // guaranteed the opposing team
+
+  // Of the two opponents, pick the one sitting next (left) in seatOrder after the picador.
+  const nextSeat       = game.seatOrder[(picadorSeat + 1) % 4];
+  const firstOpponent  = opponents.includes(nextSeat) ? nextSeat : opponents.find(p => p !== nextSeat)!;
+  const secondOpponent = opponents.find(p => p !== firstOpponent)!;
+
+  const turnOrder: PlayerId[] = [picadorId, firstOpponent, partner, secondOpponent];
 
   // Persist teams
   game.teams["TEAM_NS"] = makeTeam("TEAM_NS", "Norte-Sur", teamNS[0], teamNS[1]);
