@@ -705,8 +705,9 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_INVALID_MELD');
   });
 
-  it('rejects when an additional meld group has the same rank as the auto-meld (pilon top)', () => {
-    // Auto-meld will be Aces (pilon top = A). Additional group also Aces → duplicate rank.
+  it('merges an additional group of the same rank as the auto-meld into a single meld', () => {
+    // Auto-meld = Aces (pilon top A + 2 match As). Additional group also Aces →
+    // all cards merged into one Ace meld (no duplicate meld created).
     const topCard  = makeCard('top_Ah', 'A', 'hearts', 20);
     const match1   = makeCard('m1_Ad', 'A', 'diamonds', 20);
     const match2   = makeCard('m2_Ac', 'A', 'clubs', 20);
@@ -719,8 +720,14 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     });
 
     const result = takePilon(game, 'p1', [match1.id, match2.id], [moreAces.map(c => c.id)]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('DUPLICATE_RANK_MELD');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Only one Ace meld on table (merged, not two separate melds)
+      const aceMelds = game.teams['TEAM_NS'].table.melds.filter(m => m.rank === 'A');
+      expect(aceMelds).toHaveLength(1);
+      // That meld has all 6 cards (2 match + topCard + 3 extra)
+      expect(aceMelds[0].cards).toHaveLength(6);
+    }
   });
 
   it('rejects when two additional meld groups share the same rank', () => {

@@ -302,31 +302,25 @@ export function takePilon(
 
       const groupRank = meldCheck.data.rank;
 
-      // Cannot open a meld of the same rank as the auto-meld (pilon top).
-      if (groupRank === (topCard.rank as Rank)) {
-        return err(
-          "DUPLICATE_RANK_MELD",
-          `Additional meld group ${i + 1} has rank ${groupRank}, same as the auto-meld (pilon top). ` +
-            `Merge these cards into one meld instead.`,
-        );
-      }
-
-      // Cannot duplicate a rank already declared in a previous additional group.
+      // Cannot duplicate a rank already declared in a previous additional group
+      // (two separate groups of the same rank should be one group).
       if (validatedAdditional.some((m) => m.rank === groupRank)) {
         return err(
           "DUPLICATE_RANK_MELD",
-          `Additional meld group ${i + 1} has rank ${groupRank} which is already used by another group.`,
+          `Additional meld group ${i + 1} has rank ${groupRank} which is already used by another group. ` +
+            `Combine them into one group instead.`,
         );
       }
 
-      // Cannot duplicate a rank the team already has on the table.
-      if (team.table.melds.some((m) => m.rank === groupRank) ||
-          team.table.canastas.some((c) => c.rank === groupRank)) {
+      // Cannot play into a rank the team already has a closed canasta of
+      // (they should burn, not meld).
+      if (team.table.canastas.some((c) => c.rank === groupRank)) {
         return err(
           "DUPLICATE_RANK_MELD",
-          `Team already has a meld or canasta of rank ${groupRank}.`,
+          `Team already has a closed canasta of rank ${groupRank}. Burn cards to it instead.`,
         );
       }
+      // Note: if an open meld of this rank exists, the cards will be merged into it.
 
       validatedAdditional.push({ cards: groupCheck.data, rank: groupRank });
     }
@@ -363,13 +357,23 @@ export function takePilon(
   // Remove match cards from hand — they go into the mandatory meld.
   removeCardsFromHandMutate(player, matchCardIds);
 
-  // Create the mandatory auto-meld: matchCards + topCard.
-  const autoMeld: Meld = {
-    id:    newMeldId(),
-    rank:  topCard.rank as Rank,
-    cards: [...matchCards, topCard],
-  };
-  team.table.melds.push(autoMeld);
+  // Create or extend the mandatory auto-meld: matchCards + topCard.
+  // If the team already has an open meld of this rank, merge into it instead
+  // of creating a duplicate.
+  const autoMeldRank = topCard.rank as Rank;
+  const existingMeld = team.table.melds.find((m) => m.rank === autoMeldRank);
+  let autoMeld: Meld;
+  if (existingMeld) {
+    existingMeld.cards.push(...matchCards, topCard);
+    autoMeld = existingMeld;
+  } else {
+    autoMeld = {
+      id:    newMeldId(),
+      rank:  autoMeldRank,
+      cards: [...matchCards, topCard],
+    };
+    team.table.melds.push(autoMeld);
+  }
 
   // Add the rest of the pilon to the player's hand.
   player.hand.push(...pilonRest);
@@ -379,15 +383,22 @@ export function takePilon(
   const additionalMelds: Meld[] = [];
 
   if (!team.hasBajado) {
-    // Remove additional meld cards from hand and create Meld objects.
+    // Remove additional meld cards from hand and create or extend Meld objects.
     for (const group of validatedAdditional) {
       removeCardsFromHandMutate(player, group.cards.map((c) => c.id));
-      const extraMeld: Meld = {
-        id:    newMeldId(),
-        rank:  group.rank,
-        cards: [...group.cards],
-      };
-      team.table.melds.push(extraMeld);
+      const existingExtra = team.table.melds.find((m) => m.rank === group.rank);
+      let extraMeld: Meld;
+      if (existingExtra) {
+        existingExtra.cards.push(...group.cards);
+        extraMeld = existingExtra;
+      } else {
+        extraMeld = {
+          id:    newMeldId(),
+          rank:  group.rank,
+          cards: [...group.cards],
+        };
+        team.table.melds.push(extraMeld);
+      }
       additionalMelds.push(extraMeld);
     }
 
