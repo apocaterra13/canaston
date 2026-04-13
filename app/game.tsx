@@ -127,9 +127,10 @@ export default function GameScreen() {
     setActionModal('take_pilon');
   }
 
-  function handleConfirmTakePilon(matchCards: Card[]) {
+  function handleConfirmTakePilon(matchCards: Card[], additionalGroups: Card[][]) {
     const matchIds = matchCards.map((c) => c.id);
-    const result = store.playerTakePilon(matchIds);
+    const additionalMeldGroups = additionalGroups.map((g) => g.map((c) => c.id));
+    const result = store.playerTakePilon(matchIds, additionalMeldGroups);
     if (result.ok) {
       setActionModal(null);
       clearSelection();
@@ -333,6 +334,8 @@ export default function GameScreen() {
           pilonState={pilonState}
           playerHand={currentPlayer?.hand ?? []}
           matchesNeeded={matchesNeeded}
+          hasBajado={hasBajado}
+          bajadaMin={bajadaMin}
           onConfirm={handleConfirmTakePilon}
           onCancel={() => setActionModal(null)}
         />
@@ -540,6 +543,8 @@ function TakePilonModal({
   pilonState,
   playerHand,
   matchesNeeded,
+  hasBajado,
+  bajadaMin,
   onConfirm,
   onCancel,
 }: {
@@ -548,88 +553,281 @@ function TakePilonModal({
   pilonState: string;
   playerHand: Card[];
   matchesNeeded: number;
-  onConfirm: (matchCards: Card[]) => void;
+  hasBajado: boolean;
+  bajadaMin: number;
+  onConfirm: (matchCards: Card[], additionalGroups: Card[][]) => void;
   onCancel: () => void;
 }) {
+  // Match-card selection (mandatory meld with pilon top)
   const [selected, setSelected] = useState<Card[]>([]);
 
-  // Filter to cards that match the top card rank
-  const matchablecards = playerHand.filter(
+  // Additional meld groups (required when team hasn't bajado)
+  // Each group is a set of cards the player is staging as a new meld
+  const [additionalGroups, setAdditionalGroups] = useState<Card[][]>([]);
+  const [stagingGroup, setStagingGroup] = useState<Card[]>([]);
+
+  // IDs already claimed (match cards + finalized groups + staging group)
+  const claimedIds = new Set<string>([
+    ...selected.map((c) => c.id),
+    ...additionalGroups.flat().map((c) => c.id),
+    ...stagingGroup.map((c) => c.id),
+  ]);
+
+  // Cards eligible for matching the pilon top
+  const matchableCards = playerHand.filter(
     (c) => c.rank === pilonTop.rank && c.category !== 'JOKER' && c.category !== 'PATO',
   );
 
-  const canConfirm = selected.length >= matchesNeeded;
+  // Cards available for additional melds (everything not yet claimed, excluding match candidates
+  // that are already selected as match cards)
+  const availableForMelds = playerHand.filter((c) => !claimedIds.has(c.id));
+
+  // Point totals
+  const autoMeldPts = selected.reduce((s, c) => s + c.points, 0) + pilonTop.points;
+  const additionalPts = additionalGroups.flat().reduce((s, c) => s + c.points, 0);
+  const totalPts = autoMeldPts + additionalPts;
+
+  const matchOk = selected.length >= matchesNeeded;
+  const bajadaOk = hasBajado || totalPts >= bajadaMin;
+  const canConfirm = matchOk && bajadaOk;
+
+  function addStagingGroup() {
+    if (stagingGroup.length >= 3) {
+      setAdditionalGroups((prev) => [...prev, stagingGroup]);
+      setStagingGroup([]);
+    }
+  }
+
+  function removeGroup(idx: number) {
+    setAdditionalGroups((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function resetAll() {
+    setSelected([]);
+    setAdditionalGroups([]);
+    setStagingGroup([]);
+  }
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={modalStyles.overlay}>
-        <View style={modalStyles.sheet}>
-          <Text style={modalStyles.title}>Tomar el Pilón</Text>
-          <Text style={modalStyles.subtitle}>
-            {pilonState === 'TRIADO'
-              ? `El pilón tiene un comodín encima. Necesitas ${matchesNeeded} cartas del mismo rango.`
-              : `Selecciona ${matchesNeeded} cartas de rango ${pilonTop.rank} de tu mano.`}
-          </Text>
-
-          {/* Show pilon top card */}
-          <View style={modalStyles.topCardRow}>
-            <Text style={modalStyles.topCardLabel}>Carta encima del pilón:</Text>
-            <CardView card={pilonTop} size="md" />
-          </View>
-
-          {/* Selectable matching cards */}
-          {matchablecards.length === 0 ? (
-            <Text style={modalStyles.noCardsText}>
-              No tienes cartas de rango {pilonTop.rank} para tomar el pilón.
+        <ScrollView contentContainerStyle={modalStyles.sheetScroll}>
+          <View style={modalStyles.sheet}>
+            <Text style={modalStyles.title}>Tomar el Pilón</Text>
+            <Text style={modalStyles.subtitle}>
+              {pilonState === 'TRIADO'
+                ? `El pilón tiene un comodín encima. Necesitas ${matchesNeeded} cartas del mismo rango.`
+                : `Selecciona ${matchesNeeded} cartas de rango ${pilonTop.rank} de tu mano.`}
             </Text>
-          ) : (
-            <>
-              <Text style={modalStyles.selectLabel}>
-                Tus cartas de {pilonTop.rank} ({selected.length}/{matchesNeeded} seleccionadas):
-              </Text>
-              <ScrollView horizontal contentContainerStyle={modalStyles.cardRow}>
-                {matchablecards.map((c) => (
-                  <CardView
-                    key={c.id}
-                    card={c}
-                    size="lg"
-                    selected={selected.some((s) => s.id === c.id)}
-                    onPress={(card) => {
-                      setSelected((prev) => {
-                        const already = prev.find((s) => s.id === card.id);
-                        if (already) return prev.filter((s) => s.id !== card.id);
-                        if (prev.length < matchesNeeded) return [...prev, card];
-                        return prev;
-                      });
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            </>
-          )}
 
-          <View style={modalStyles.btnRow}>
-            <TouchableOpacity style={modalStyles.cancelBtn} onPress={onCancel}>
-              <Text style={modalStyles.cancelText}>Cancelar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[modalStyles.confirmBtn, !canConfirm && modalStyles.confirmBtnDisabled]}
-              onPress={() => {
-                if (canConfirm) {
-                  onConfirm(selected);
-                  setSelected([]);
-                }
-              }}
-              disabled={!canConfirm}
-            >
-              <Text style={modalStyles.confirmText}>Tomar pilón ✓</Text>
-            </TouchableOpacity>
+            {/* Pilon top card */}
+            <View style={modalStyles.topCardRow}>
+              <Text style={modalStyles.topCardLabel}>Carta encima del pilón:</Text>
+              <CardView card={pilonTop} size="md" />
+            </View>
+
+            {/* Match cards */}
+            {matchableCards.length === 0 ? (
+              <Text style={modalStyles.noCardsText}>
+                No tienes cartas de rango {pilonTop.rank} para tomar el pilón.
+              </Text>
+            ) : (
+              <>
+                <Text style={modalStyles.selectLabel}>
+                  Tus cartas de {pilonTop.rank} ({selected.length}/{matchesNeeded} seleccionadas):
+                </Text>
+                <ScrollView horizontal contentContainerStyle={modalStyles.cardRow}>
+                  {matchableCards.map((c) => (
+                    <CardView
+                      key={c.id}
+                      card={c}
+                      size="lg"
+                      selected={selected.some((s) => s.id === c.id)}
+                      disabled={claimedIds.has(c.id) && !selected.some((s) => s.id === c.id)}
+                      onPress={(card) => {
+                        setSelected((prev) => {
+                          const already = prev.find((s) => s.id === card.id);
+                          if (already) return prev.filter((s) => s.id !== card.id);
+                          if (prev.length < matchesNeeded) return [...prev, card];
+                          return prev;
+                        });
+                      }}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {/* ── Bajada section — only shown when team hasn't bajado yet ── */}
+            {!hasBajado && (
+              <>
+                <View style={pilonModalStyles.divider} />
+                <Text style={pilonModalStyles.bajadaTitle}>
+                  Bajada obligatoria — mín. {bajadaMin} pts
+                </Text>
+
+                {/* Point progress */}
+                <View style={pilonModalStyles.progressRow}>
+                  <Text style={pilonModalStyles.progressLabel}>
+                    Auto-meld: {autoMeldPts} pts
+                  </Text>
+                  <Text style={pilonModalStyles.progressLabel}>
+                    Adicionales: {additionalPts} pts
+                  </Text>
+                  <Text style={[
+                    pilonModalStyles.progressTotal,
+                    totalPts >= bajadaMin ? pilonModalStyles.progressOk : pilonModalStyles.progressShort,
+                  ]}>
+                    Total: {totalPts} / {bajadaMin}
+                  </Text>
+                </View>
+
+                {/* Finalized additional groups */}
+                {additionalGroups.map((group, idx) => (
+                  <View key={idx} style={pilonModalStyles.groupRow}>
+                    <Text style={pilonModalStyles.groupLabel}>
+                      Meld {idx + 1} ({group.reduce((s, c) => s + c.points, 0)} pts):
+                    </Text>
+                    <ScrollView horizontal contentContainerStyle={modalStyles.cardRow}>
+                      {group.map((c) => (
+                        <CardView key={c.id} card={c} size="sm" />
+                      ))}
+                    </ScrollView>
+                    <TouchableOpacity onPress={() => removeGroup(idx)} style={pilonModalStyles.removeGroupBtn}>
+                      <Text style={pilonModalStyles.removeGroupText}>✕ Quitar</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {/* Staging a new group */}
+                <Text style={pilonModalStyles.stagingLabel}>
+                  Agregar meld adicional ({stagingGroup.length} carta{stagingGroup.length !== 1 ? 's' : ''}):
+                </Text>
+                {availableForMelds.length > 0 && (
+                  <ScrollView horizontal contentContainerStyle={modalStyles.cardRow}>
+                    {availableForMelds.map((c) => (
+                      <CardView
+                        key={c.id}
+                        card={c}
+                        size="md"
+                        selected={stagingGroup.some((s) => s.id === c.id)}
+                        onPress={(card) => {
+                          setStagingGroup((prev) => {
+                            const already = prev.find((s) => s.id === card.id);
+                            return already
+                              ? prev.filter((s) => s.id !== card.id)
+                              : [...prev, card];
+                          });
+                        }}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+                <TouchableOpacity
+                  style={[pilonModalStyles.addGroupBtn, stagingGroup.length < 3 && modalStyles.confirmBtnDisabled]}
+                  onPress={addStagingGroup}
+                  disabled={stagingGroup.length < 3}
+                >
+                  <Text style={pilonModalStyles.addGroupText}>
+                    + Confirmar meld ({stagingGroup.length} cartas)
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <View style={modalStyles.btnRow}>
+              <TouchableOpacity style={modalStyles.cancelBtn} onPress={() => { resetAll(); onCancel(); }}>
+                <Text style={modalStyles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[modalStyles.confirmBtn, !canConfirm && modalStyles.confirmBtnDisabled]}
+                onPress={() => {
+                  if (canConfirm) {
+                    onConfirm(selected, additionalGroups);
+                    resetAll();
+                  }
+                }}
+                disabled={!canConfirm}
+              >
+                <Text style={modalStyles.confirmText}>Tomar pilón ✓</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
 }
+
+const pilonModalStyles = StyleSheet.create({
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginVertical: 12,
+  },
+  bajadaTitle: {
+    color: '#9b59b6',
+    fontWeight: '700',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  progressLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+  },
+  progressTotal: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  progressOk: { color: '#2ecc71' },
+  progressShort: { color: '#e74c3c' },
+  groupRow: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+  },
+  groupLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  removeGroupBtn: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  removeGroupText: {
+    color: '#e74c3c',
+    fontSize: 12,
+  },
+  stagingLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  addGroupBtn: {
+    backgroundColor: '#2980b9',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  addGroupText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -944,6 +1142,10 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
+  },
+  sheetScroll: {
+    justifyContent: 'flex-end',
+    flexGrow: 1,
   },
   sheet: {
     backgroundColor: '#1a472a',

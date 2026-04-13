@@ -196,7 +196,15 @@ export function takePilon(
   game: GameStateData,
   playerId: PlayerId,
   matchCardIds: string[], // cards from hand to match the top of pilon
-): ActionResult<{ pilonCards: Card[]; autoMeld: Meld }> {
+  /**
+   * When the team has not yet bajado, the player MUST provide enough
+   * additional melds (from their hand) so that the auto-meld + these
+   * extra melds together meet the bajada point minimum.
+   * Each element is a group of card IDs that forms one valid meld.
+   * Ignored (and may be empty) when the team already has bajado.
+   */
+  additionalMeldGroups: string[][] = [],
+): ActionResult<{ pilonCards: Card[]; autoMeld: Meld; additionalMelds: Meld[] }> {
   const stateCheck = requireState(game, "TURNO_NORMAL");
   if (!stateCheck.ok) return stateCheck;
 
@@ -248,52 +256,128 @@ export function takePilon(
     }
   }
 
-  // Separate top card (will anchor the mandatory meld) from the rest of the pile.
-  const pilonRest = round.pilon.slice(0, -1); // all cards below the top
+  const player   = game.players[playerId];
+  const { team } = getTeamForPlayer(game, playerId);
 
-  // Clear the pilon
+  // ---------------------------------------------------------------------------
+  // Bajada validation (section 9.1) — only when team has not yet bajado.
+  // The player must declare upfront which additional cards they will meld so
+  // that the total (auto-meld + additional melds) meets the bajada minimum.
+  // ---------------------------------------------------------------------------
+  const validatedAdditional: Array<{ cards: Card[]; rank: Rank }> = [];
+
+  if (!team.hasBajado) {
+    const minimum = getBajadaMinimum(team.globalScore);
+
+    // Collect and validate each additional meld group.
+    // All card IDs that have already been claimed (match cards + previous groups).
+    const claimedIds = new Set<string>(matchCardIds);
+
+    for (let i = 0; i < additionalMeldGroups.length; i++) {
+      const group = additionalMeldGroups[i];
+
+      // No duplicates across groups or with match cards.
+      for (const id of group) {
+        if (claimedIds.has(id)) {
+          return err(
+            "PILON_BAJADA_DUPLICATE_CARD",
+            `Card ${id} appears in more than one meld group.`,
+          );
+        }
+        claimedIds.add(id);
+      }
+
+      // Cards must be in hand.
+      const groupCheck = requireCardsInHand(game, playerId, group);
+      if (!groupCheck.ok) return groupCheck;
+
+      // Group must form a valid meld.
+      const meldCheck = validateMeld(groupCheck.data);
+      if (!meldCheck.ok) {
+        return err(
+          "PILON_BAJADA_INVALID_MELD",
+          `Additional meld group ${i + 1}: ${meldCheck.error.message}`,
+        );
+      }
+
+      validatedAdditional.push({ cards: groupCheck.data, rank: meldCheck.data.rank });
+    }
+
+    // Check total points: auto-meld (matchCards + topCard) + additional melds.
+    const autoMeldPoints       = sumCardPoints([...matchCards, topCard]);
+    const additionalPoints     = validatedAdditional.reduce(
+      (sum, m) => sum + sumCardPoints(m.cards), 0,
+    );
+    const total = autoMeldPoints + additionalPoints;
+
+    if (total < minimum) {
+      return err(
+        "PILON_BAJADA_MINIMUM_NOT_MET",
+        `Taking the pilon requires at least ${minimum} points in melds ` +
+          `(auto-meld + declared melds = ${total} pts).`,
+        { total, minimum },
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // All validation passed — execute the action.
+  // ---------------------------------------------------------------------------
+
+  // Separate top card (anchors the mandatory meld) from the rest of the pile.
+  const pilonRest = round.pilon.slice(0, -1);
+
+  // Clear the pilon.
   round.pilon      = [];
   round.pilonState = "EMPTY";
   round.tapaActive = false;
 
-  const player        = game.players[playerId];
-  const { team }      = getTeamForPlayer(game, playerId);
-
   // Remove match cards from hand — they go into the mandatory meld.
   removeCardsFromHandMutate(player, matchCardIds);
 
-  // Create the mandatory meld: match cards + top card (section 8.1).
-  const meldCards: Card[] = [...matchCards, topCard];
-  const meldRank          = topCard.rank;
-  const meld: Meld = {
+  // Create the mandatory auto-meld: matchCards + topCard.
+  const autoMeld: Meld = {
     id:    newMeldId(),
-    rank:  meldRank,
-    cards: meldCards,
+    rank:  topCard.rank as Rank,
+    cards: [...matchCards, topCard],
   };
-  team.table.melds.push(meld);
+  team.table.melds.push(autoMeld);
 
-  // Track for bajada counting (same logic as layMeld).
-  if (!team.hasBajado) {
-    game.turn!.bajadaMeldIds.push(meld.id);
-  }
-
-  // Activate mono-obligado if this is a wildcard meld (section 9.3).
-  if (meldRank === "2" || meldRank === "JOKER") {
-    team.monoObligado = true;
-  }
-
-  // Add the remaining pilon cards to hand (top card already in the meld).
+  // Add the rest of the pilon to the player's hand.
   player.hand.push(...pilonRest);
   player.hand = sortHand(player.hand);
 
+  // Build additional melds (only when team hasn't bajado yet).
+  const additionalMelds: Meld[] = [];
+
+  if (!team.hasBajado) {
+    // Remove additional meld cards from hand and create Meld objects.
+    for (const group of validatedAdditional) {
+      removeCardsFromHandMutate(player, group.cards.map((c) => c.id));
+      const extraMeld: Meld = {
+        id:    newMeldId(),
+        rank:  group.rank,
+        cards: [...group.cards],
+      };
+      team.table.melds.push(extraMeld);
+      additionalMelds.push(extraMeld);
+    }
+
+    // Mark bajada as complete — validation already confirmed the minimum is met.
+    team.hasBajado = true;
+  }
+
+  // Track all new meld IDs in bajadaMeldIds for commitBajada / addToMeld access.
+  const ctx = game.turn!;
+  ctx.bajadaMeldIds.push(autoMeld.id, ...additionalMelds.map((m) => m.id));
+
   // Update turn context.
-  const ctx           = game.turn!;
   ctx.tookPilon       = true;
   ctx.pilonMatchCards = matchCards;
   ctx.drawnCards      = pilonRest; // cards that went to hand (for NEW badge)
   ctx.phase           = "TOOK_PILON";
 
-  return ok({ pilonCards: pilonRest, autoMeld: meld });
+  return ok({ pilonCards: pilonRest, autoMeld, additionalMelds });
 }
 
 // ---------------------------------------------------------------------------

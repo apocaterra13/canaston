@@ -73,6 +73,7 @@ function makeGame(overrides: {
   tapaActive?: boolean;
   hand?: Card[];
   currentPlayerId?: string;
+  hasBajado?: boolean;
 }): GameStateData {
   const playerId = overrides.currentPlayerId ?? 'p1';
   const hand     = overrides.hand ?? [];
@@ -103,6 +104,10 @@ function makeGame(overrides: {
     scoreHistory: [],
     winner: null,
   };
+
+  if (overrides.hasBajado) {
+    game.teams['TEAM_NS'].hasBajado = true;
+  }
 
   return game;
 }
@@ -142,6 +147,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
       pilon: [bottom, mid, topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
+      hasBajado: true, // bypass bajada minimum check for mechanics test
     });
 
     const result = takePilon(game, 'p1', [match1.id, match2.id]);
@@ -161,7 +167,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
     const match1  = makeCard('m1_7d', '7', 'diamonds');
     const match2  = makeCard('m2_7c', '7', 'clubs');
 
-    const game = makeGame({ pilon: [topCard], pilonState: 'NORMAL', hand: [match1, match2] });
+    const game = makeGame({ pilon: [topCard], pilonState: 'NORMAL', hand: [match1, match2], hasBajado: true });
     takePilon(game, 'p1', [match1.id, match2.id]);
 
     const team = game.teams['TEAM_NS'];
@@ -180,6 +186,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
       pilon: [bottom, mid, topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
+      hasBajado: true,
     });
 
     takePilon(game, 'p1', [match1.id, match2.id]);
@@ -205,6 +212,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
       pilon: [other, topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
+      hasBajado: true,
     });
 
     const result = takePilon(game, 'p1', [match1.id, match2.id]);
@@ -227,6 +235,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
       pilon: [topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
+      hasBajado: true,
     });
 
     takePilon(game, 'p1', [match1.id, match2.id]);
@@ -245,6 +254,7 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
       pilon: [topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2, other],
+      hasBajado: true,
     });
 
     takePilon(game, 'p1', [match1.id, match2.id]);
@@ -272,6 +282,7 @@ describe('takePilon — triado state', () => {
       pilon: [topCard],
       pilonState: 'TRIADO',
       hand: [match1, match2, match3],
+      hasBajado: true,
     });
 
     const result = takePilon(game, 'p1', [match1.id, match2.id, match3.id]);
@@ -379,6 +390,7 @@ describe('takePilon — turn context', () => {
       pilon:      [topCard],
       pilonState: 'NORMAL',
       hand: [match1, match2],
+      hasBajado: true,
     });
 
     takePilon(game, 'p1', [match1.id, match2.id]);
@@ -593,5 +605,146 @@ describe('bajada deadlock — extending a pending bajada meld before commitBajad
     const result = addToMeld(game, 'p1', 'old_meld', [extra.id]);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('NO_BAJADA');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// takePilon + bajada — player must declare additional melds to meet minimum
+// ---------------------------------------------------------------------------
+
+describe('takePilon — bajada requirement when team has not yet bajado', () => {
+  /**
+   * Build cards of a given rank (all NORMAL category).
+   * 20 pts each so 3 cards = 60 pts, clearing the default 50-pt minimum.
+   */
+  function naturalCards(rank: Card['rank'], prefix: string, count: number, pts = 20): Card[] {
+    return Array.from({ length: count }, (_, i) =>
+      makeCard(`${prefix}_${i}`, rank, 'hearts', pts),
+    );
+  }
+
+  it('fails when auto-meld points alone are below the minimum', () => {
+    // topCard = 5 pts, 2 match cards = 5 pts each → auto-meld = 15 pts < 50
+    const topCard = makeCard('top_5h', '5', 'hearts', 5);
+    const match1  = makeCard('m1_5d', '5', 'diamonds', 5);
+    const match2  = makeCard('m2_5c', '5', 'clubs', 5);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2],
+      // hasBajado intentionally NOT set — team must meet minimum
+    });
+
+    const result = takePilon(game, 'p1', [match1.id, match2.id]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_MINIMUM_NOT_MET');
+  });
+
+  it('succeeds when auto-meld + additional melds meet the minimum', () => {
+    // auto-meld: topCard (20) + 2 match 7s (20 each) = 60 pts — meets 50-pt minimum on its own
+    const topCard = makeCard('top_7h', '7', 'hearts', 20);
+    const match1  = makeCard('m1_7d', '7', 'diamonds', 20);
+    const match2  = makeCard('m2_7c', '7', 'clubs', 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2],
+    });
+
+    // Total = 60 pts ≥ 50 — no additional melds needed
+    const result = takePilon(game, 'p1', [match1.id, match2.id]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
+      expect(result.data.additionalMelds).toHaveLength(0);
+    }
+  });
+
+  it('succeeds when additional meld group bridges the gap to the minimum', () => {
+    // auto-meld: topCard (5) + 2 match cards (5 each) = 15 pts
+    // additional meld: 3 aces (20 each) = 60 pts → total = 75 pts ≥ 50
+    const topCard = makeCard('top_5h', '5', 'hearts', 5);
+    const match1  = makeCard('m1_5d', '5', 'diamonds', 5);
+    const match2  = makeCard('m2_5c', '5', 'clubs', 5);
+    const aces    = naturalCards('A', 'a', 3, 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2, ...aces],
+    });
+
+    const result = takePilon(game, 'p1', [match1.id, match2.id], [aces.map(c => c.id)]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
+      expect(result.data.additionalMelds).toHaveLength(1);
+      expect(result.data.additionalMelds[0].rank).toBe('A');
+      // Additional meld cards removed from hand
+      for (const ace of aces) {
+        expect(game.players['p1'].hand.find(c => c.id === ace.id)).toBeUndefined();
+      }
+      // Auto-meld and additional meld appear on team table
+      expect(game.teams['TEAM_NS'].table.melds).toHaveLength(2);
+    }
+  });
+
+  it('rejects when additional meld group has fewer than 3 cards (invalid meld)', () => {
+    const topCard = makeCard('top_5h', '5', 'hearts', 5);
+    const match1  = makeCard('m1_5d', '5', 'diamonds', 5);
+    const match2  = makeCard('m2_5c', '5', 'clubs', 5);
+    const onlyTwo = naturalCards('A', 'a', 2, 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2, ...onlyTwo],
+    });
+
+    const result = takePilon(game, 'p1', [match1.id, match2.id], [onlyTwo.map(c => c.id)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_INVALID_MELD');
+  });
+
+  it('rejects when a card appears in both match cards and an additional meld group', () => {
+    const topCard = makeCard('top_7h', '7', 'hearts', 20);
+    const match1  = makeCard('m1_7d', '7', 'diamonds', 20);
+    const match2  = makeCard('m2_7c', '7', 'clubs', 20);
+    const aces    = naturalCards('A', 'a', 3, 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2, ...aces],
+    });
+
+    // match1 used in both matchCardIds and the additional group — duplicate
+    const result = takePilon(
+      game,
+      'p1',
+      [match1.id, match2.id],
+      [[match1.id, ...aces.map(c => c.id)]],
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_DUPLICATE_CARD');
+  });
+
+  it('hasBajado is set after successful pilon take pre-bajada', () => {
+    const topCard = makeCard('top_7h', '7', 'hearts', 20);
+    const match1  = makeCard('m1_7d', '7', 'diamonds', 20);
+    const match2  = makeCard('m2_7c', '7', 'clubs', 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2],
+    });
+
+    expect(game.teams['TEAM_NS'].hasBajado).toBe(false);
+    const result = takePilon(game, 'p1', [match1.id, match2.id]);
+    expect(result.ok).toBe(true);
+    expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
   });
 });

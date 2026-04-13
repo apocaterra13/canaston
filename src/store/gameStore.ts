@@ -63,7 +63,7 @@ export interface GameStore {
 
   // ── Turn actions — all delegate validation to the engine ─────────────────
   playerDrawFromStock: () => ActionResult<{ drawn: Card[] }>;
-  playerTakePilon: (matchCardIds: string[]) => ActionResult<{ pilonCards: Card[] }>;
+  playerTakePilon: (matchCardIds: string[], additionalMeldGroups?: string[][]) => ActionResult<{ pilonCards: Card[] }>;
   playerLayMeld: (cardIds: string[], isBajadaInitial?: boolean) => ActionResult<{ meld: Meld; isBajada: boolean; pointsLaid: number }>;
   playerCommitBajada: () => ActionResult<{ totalPoints: number; minimum: number }>;
   playerAddToMeld: (meldId: string, cardIds: string[]) => ActionResult<{ meld: Meld; closed: boolean; canasta?: Canasta }>;
@@ -207,12 +207,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return result;
   },
 
-  playerTakePilon(matchCardIds) {
+  playerTakePilon(matchCardIds, additionalMeldGroups = []) {
     const game = get().game;
     if (!game) return noGameErr();
     if (!game.turn) return noTurnErr();
 
-    const result = engineTakePilon(game, game.turn.playerId, matchCardIds);
+    const result = engineTakePilon(game, game.turn.playerId, matchCardIds, additionalMeldGroups);
     if (result.ok) {
       set({ game: forceRerender(game) });
     } else {
