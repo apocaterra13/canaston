@@ -5,7 +5,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { Canasta } from '../../engine/types';
-import { canastaBaseScore } from '../../engine';
+import { canastaBaseScore, canastaEffectiveType } from '../../engine';
 
 interface CanastaViewProps {
   canasta: Canasta;
@@ -30,19 +30,8 @@ const TYPE_CONFIG = {
  *   Jokers limpia — 6 jokers + 1 pato   → 🃏 (joker emoji only)
  *   Monos sucia   — any other mix        → "2" + ♣ (dark)
  */
-/** Mono canastas resolve to LIMPIA or SUCIA for display purposes. */
-function monoDisplayType(canasta: Canasta): 'LIMPIA' | 'SUCIA' {
-  const jokerCount = canasta.cards.filter((c) => c.category === 'JOKER').length;
-  const patoCount  = canasta.cards.filter((c) => c.category === 'PATO').length;
-  // Patos limpia (all 2s) or jokers limpia (6 jokers + 1 pato)
-  if (patoCount === canasta.cards.length) return 'LIMPIA';
-  if (jokerCount === 6 && patoCount === 1) return 'LIMPIA';
-  return 'SUCIA';
-}
-
 function getDisplayType(canasta: Canasta): 'LIMPIA' | 'SUCIA' {
-  if (canasta.type === 'MONO') return monoDisplayType(canasta);
-  return canasta.type as 'LIMPIA' | 'SUCIA';
+  return canastaEffectiveType(canasta);
 }
 
 function getRankDisplay(canasta: Canasta, displayType: 'LIMPIA' | 'SUCIA'): {

@@ -236,6 +236,27 @@ export function isSuciCanasta(cards: Card[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Canasta effective-type helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the effective type of a canasta for scoring / ida purposes.
+ * Regular canastas return their stored type directly.
+ * MONO canastas (all wildcards) are classified by composition:
+ *   - All 2s (patos only)   → LIMPIA
+ *   - 6 jokers + 1 pato     → LIMPIA
+ *   - Any other combination → SUCIA
+ */
+export function canastaEffectiveType(canasta: Canasta): "LIMPIA" | "SUCIA" {
+  if (canasta.type !== "MONO") return canasta.type as "LIMPIA" | "SUCIA";
+  const jokers = canasta.cards.filter((c) => c.category === "JOKER").length;
+  const patos  = canasta.cards.filter((c) => c.category === "PATO").length;
+  if (patos === canasta.cards.length) return "LIMPIA";       // all 2s
+  if (jokers === 6 && patos === 1)    return "LIMPIA";       // 6 jokers + 1 pato
+  return "SUCIA";
+}
+
+// ---------------------------------------------------------------------------
 // Ida validation helpers (section 12)
 // ---------------------------------------------------------------------------
 
@@ -263,8 +284,8 @@ export function canIr(
 
   // Team needs >=1 LIMPIA + >=1 SUCIA (or LIMPIA)
   const canastas = team.table.canastas;
-  const limpias  = canastas.filter((c) => c.type === "LIMPIA").length;
-  const sucias   = canastas.filter((c) => c.type === "SUCIA").length;
+  const limpias  = canastas.filter((c) => canastaEffectiveType(c) === "LIMPIA").length;
+  const sucias   = canastas.filter((c) => canastaEffectiveType(c) === "SUCIA").length;
 
   if (limpias < 1) {
     return err("IDA_NO_LIMPIA", "Team must have at least 1 clean canasta to go out.");

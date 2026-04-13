@@ -40,6 +40,12 @@ export default function RoundSummaryScreen() {
   const nsGlobal = latestScore.globalAfter['TEAM_NS'];
   const ewGlobal = latestScore.globalAfter['TEAM_EW'];
 
+  function teamLabel(teamId: 'TEAM_NS' | 'TEAM_EW') {
+    return game.teams[teamId].playerIds
+      .map((pid) => game.players[pid]?.name ?? pid)
+      .join(' & ');
+  }
+
   const roundNumber = latestScore.roundNumber;
   const idaPlayerId = game.round?.idaPlayerId ?? null;
   const idaPlayerName = idaPlayerId ? game.players[idaPlayerId]?.name : null;
@@ -75,9 +81,9 @@ export default function RoundSummaryScreen() {
 
         {/* Team score headers */}
         <View style={styles.teamRow}>
-          <TeamHeader name={game.teams['TEAM_NS'].name} global={nsGlobal} color={TEAM_NS_COLOR} />
+          <TeamHeader name={teamLabel('TEAM_NS')} global={nsGlobal} color={TEAM_NS_COLOR} />
           <View style={styles.vsLabel}><Text style={styles.vsText}>VS</Text></View>
-          <TeamHeader name={game.teams['TEAM_EW'].name} global={ewGlobal} color={TEAM_EW_COLOR} />
+          <TeamHeader name={teamLabel('TEAM_EW')} global={ewGlobal} color={TEAM_EW_COLOR} />
         </View>
 
         {/* Score breakdown table */}
@@ -128,12 +134,12 @@ export default function RoundSummaryScreen() {
         <View style={styles.progressSection}>
           <Text style={styles.progressTitle}>Progreso hacia 15.000 pts</Text>
           <ProgressTeam
-            name={game.teams['TEAM_NS'].name}
+            name={teamLabel('TEAM_NS')}
             value={nsGlobal}
             color={TEAM_NS_COLOR}
           />
           <ProgressTeam
-            name={game.teams['TEAM_EW'].name}
+            name={teamLabel('TEAM_EW')}
             value={ewGlobal}
             color={TEAM_EW_COLOR}
           />
@@ -146,13 +152,13 @@ export default function RoundSummaryScreen() {
             {game.scoreHistory.map((rs) => (
               <View key={rs.roundNumber} style={styles.historyRow}>
                 <Text style={styles.historyRound}>R{rs.roundNumber}</Text>
-                <Text style={[styles.historyScore, { color: TEAM_NS_COLOR }]}>
+                <Text style={[styles.historyScore, rs.scores['TEAM_NS'].total < 0 && styles.historyNegative]}>
                   {rs.scores['TEAM_NS'].total > 0 ? '+' : ''}{rs.scores['TEAM_NS'].total}
                 </Text>
                 <Text style={styles.historyGlobal}>{rs.globalAfter['TEAM_NS'].toLocaleString()}</Text>
                 <View style={{ flex: 1 }} />
                 <Text style={styles.historyGlobal}>{rs.globalAfter['TEAM_EW'].toLocaleString()}</Text>
-                <Text style={[styles.historyScore, { color: TEAM_EW_COLOR }]}>
+                <Text style={[styles.historyScore, rs.scores['TEAM_EW'].total < 0 && styles.historyNegative]}>
                   {rs.scores['TEAM_EW'].total > 0 ? '+' : ''}{rs.scores['TEAM_EW'].total}
                 </Text>
               </View>
@@ -183,13 +189,13 @@ function TeamHeader({ name, global, color }: { name: string; global: number; col
   const pct = Math.min(global / WIN_THRESHOLD * 100, 100);
   return (
     <View style={[teamHeaderStyles.container, { borderColor: color }]}>
-      <Text style={[teamHeaderStyles.name, { color }]}>{name}</Text>
+      <Text style={teamHeaderStyles.name}>{name}</Text>
       <Text style={teamHeaderStyles.global}>{global.toLocaleString()}</Text>
       <Text style={teamHeaderStyles.pts}>pts totales</Text>
       <View style={teamHeaderStyles.progressTrack}>
         <View style={[teamHeaderStyles.progressFill, { width: `${pct}%` as any, backgroundColor: color }]} />
       </View>
-      <Text style={[teamHeaderStyles.pct, { color }]}>{pct.toFixed(0)}%</Text>
+      <Text style={teamHeaderStyles.pct}>{pct.toFixed(0)}%</Text>
     </View>
   );
 }
@@ -203,9 +209,9 @@ const teamHeaderStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
   },
-  name: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  name: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', color: '#fff' },
   global: { fontSize: 26, fontWeight: 'bold', color: '#fff' },
-  pts: { fontSize: 10, color: 'rgba(255,255,255,0.4)' },
+  pts: { fontSize: 10, color: '#fff' },
   progressTrack: {
     width: '100%',
     height: 6,
@@ -215,7 +221,7 @@ const teamHeaderStyles = StyleSheet.create({
     marginTop: 4,
   },
   progressFill: { height: 6, borderRadius: 3 },
-  pct: { fontSize: 10, fontWeight: '600' },
+  pct: { fontSize: 10, fontWeight: '600', color: '#fff' },
 });
 
 function BreakdownHeader() {
@@ -247,10 +253,10 @@ function BreakdownTotal({ ns, ew }: { ns: number; ew: number }) {
   return (
     <View style={breakdownStyles.totalRow}>
       <Text style={breakdownStyles.totalLabel}>TOTAL RONDA</Text>
-      <Text style={[breakdownStyles.totalValue, ns < 0 && breakdownStyles.negative, { color: TEAM_NS_COLOR }]}>
+      <Text style={[breakdownStyles.totalValue, ns < 0 && breakdownStyles.negative]}>
         {ns > 0 ? '+' : ''}{ns.toLocaleString()}
       </Text>
-      <Text style={[breakdownStyles.totalValue, ew < 0 && breakdownStyles.negative, { color: TEAM_EW_COLOR }]}>
+      <Text style={[breakdownStyles.totalValue, ew < 0 && breakdownStyles.negative]}>
         {ew > 0 ? '+' : ''}{ew.toLocaleString()}
       </Text>
     </View>
@@ -265,17 +271,17 @@ const breakdownStyles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.1)',
     marginBottom: 4,
   },
-  headerLabel: { flex: 1, color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  headerTeam: { width: 70, color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600', textAlign: 'right', textTransform: 'uppercase' },
+  headerLabel: { flex: 1, color: '#fff', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  headerTeam: { width: 70, color: '#fff', fontSize: 11, fontWeight: '600', textAlign: 'right', textTransform: 'uppercase' },
   row: {
     flexDirection: 'row',
     paddingVertical: 7,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
-  label: { flex: 1, color: 'rgba(255,255,255,0.75)', fontSize: 13 },
+  label: { flex: 1, color: '#fff', fontSize: 13 },
   value: { width: 70, color: '#fff', fontSize: 13, fontWeight: '600', textAlign: 'right' },
-  negative: { color: '#e74c3c' },
+  negative: { color: '#f39c12' }, // orange — distinguishable on green for colour-blind users
   totalRow: {
     flexDirection: 'row',
     paddingTop: 12,
@@ -284,14 +290,14 @@ const breakdownStyles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.2)',
   },
   totalLabel: { flex: 1, color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  totalValue: { width: 70, fontSize: 16, fontWeight: 'bold', textAlign: 'right' },
+  totalValue: { width: 70, fontSize: 16, fontWeight: 'bold', textAlign: 'right', color: '#fff' },
 });
 
 function ProgressTeam({ name, value, color }: { name: string; value: number; color: string }) {
   const pct = Math.min(value / WIN_THRESHOLD, 1);
   return (
     <View style={progressStyles.row}>
-      <Text style={[progressStyles.name, { color }]}>{name}</Text>
+      <Text style={progressStyles.name}>{name}</Text>
       <View style={progressStyles.track}>
         <View style={[progressStyles.fill, { width: `${pct * 100}%` as any, backgroundColor: color }]} />
       </View>
@@ -302,7 +308,7 @@ function ProgressTeam({ name, value, color }: { name: string; value: number; col
 
 const progressStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  name: { width: 80, fontSize: 12, fontWeight: '600' },
+  name: { width: 80, fontSize: 12, fontWeight: '600', color: '#fff' },
   track: { flex: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 5, overflow: 'hidden' },
   fill: { height: 10, borderRadius: 5 },
   value: { width: 60, color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'right' },
@@ -330,10 +336,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 5,
   },
-  stockBannerText: { color: 'rgba(255,255,255,0.5)', fontSize: 14 },
+  stockBannerText: { color: '#fff', fontSize: 14 },
   teamRow: { flexDirection: 'row', gap: 10, marginBottom: 16, alignItems: 'stretch' },
   vsLabel: { justifyContent: 'center', alignItems: 'center', width: 24 },
-  vsText: { color: 'rgba(255,255,255,0.25)', fontSize: 12, fontWeight: '700' },
+  vsText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   breakdownCard: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14,
@@ -341,9 +347,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   progressSection: { marginBottom: 16 },
-  progressTitle: { color: '#a9dfbf', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 10 },
+  progressTitle: { color: '#fff', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 10 },
   historySection: { marginBottom: 16 },
-  historyTitle: { color: '#a9dfbf', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 },
+  historyTitle: { color: '#fff', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 },
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -351,8 +357,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
-  historyRound: { width: 28, color: 'rgba(255,255,255,0.4)', fontSize: 12 },
-  historyScore: { width: 52, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  historyRound: { width: 28, color: '#fff', fontSize: 12 },
+  historyScore: { width: 52, fontSize: 12, fontWeight: '600', textAlign: 'right', color: '#fff' },
+  historyNegative: { color: '#f39c12' },
   historyGlobal: { width: 60, color: '#fff', fontSize: 13, fontWeight: 'bold', textAlign: 'right' },
   buttons: { flexDirection: 'row', gap: 12, marginTop: 8 },
   quitBtn: {
@@ -363,7 +370,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
   },
-  quitBtnText: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },
+  quitBtnText: { color: '#fff', fontSize: 14 },
   nextBtn: {
     flex: 2,
     backgroundColor: '#f39c12',

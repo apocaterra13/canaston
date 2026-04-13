@@ -37,6 +37,7 @@ import {
   isCanastaCloseable,
   countMono,
   canIr,
+  canastaEffectiveType,
 } from "./validation";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,46 @@ function removeCardsFromHandMutate(player: import("./types").Player, cardIds: st
 function getTeamForPlayer(game: GameStateData, pid: PlayerId): { teamId: TeamId; team: import("./types").Team } {
   const teamId = game.playerTeam[pid];
   return { teamId, team: game.teams[teamId] };
+}
+
+/**
+ * Guards that a play action (layMeld / addToMeld / addToCanasta) leaves the
+ * player's hand in a legal state:
+ *
+ *   1. At least 1 card must remain (to discard at end of turn).
+ *   2. If exactly 1 card would remain, the player must already have the ida
+ *      conditions met (≥1 LIMPIA + ≥1 SUCIA), otherwise they would be forced
+ *      to discard that last card without being able to go out — a dead end.
+ */
+function validateHandAfterPlay(
+  game: GameStateData,
+  playerId: PlayerId,
+  cardIdsToRemove: string[],
+): ActionResult<void> {
+  const removeSet = new Set(cardIdsToRemove);
+  const handAfter = game.players[playerId].hand.filter((c) => !removeSet.has(c.id));
+
+  if (handAfter.length === 0) {
+    return err(
+      "MUST_KEEP_DISCARD_CARD",
+      "Debes conservar al menos una carta para descartar al final del turno.",
+    );
+  }
+
+  if (handAfter.length === 1) {
+    const { team } = getTeamForPlayer(game, playerId);
+    const hasLimpia = team.table.canastas.some((c) => canastaEffectiveType(c) === "LIMPIA");
+    const hasSucia  = team.table.canastas.some((c) => canastaEffectiveType(c) === "SUCIA");
+    if (!hasLimpia || !hasSucia) {
+      return err(
+        "CANNOT_LEAVE_ONE_CARD",
+        "No puedes quedarte con una sola carta si no puedes realizar la ida " +
+          "(se necesita canasta limpia y sucia cerradas).",
+      );
+    }
+  }
+
+  return ok(undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -491,32 +532,39 @@ export function layMeld(
   // Prevent duplicate rank: team cannot open a new meld of a rank they already
   // have a meld or canasta for. If they have a closed canasta they should burn;
   // if they have an open meld they should extend it via addToMeld.
-  if (team.table.melds.some((m) => m.rank === rank)) {
+  //
+  // Mono melds (rank "2" or "JOKER") are treated as one family: a team can
+  // only have a single mono meld/canasta regardless of which wildcard rank it
+  // was assigned when created.
+  const isMono = rank === "2" || rank === "JOKER";
+  const hasDupMeld = isMono
+    ? team.table.melds.some((m) => m.rank === "2" || m.rank === "JOKER")
+    : team.table.melds.some((m) => m.rank === rank);
+  if (hasDupMeld) {
     return err(
       "DUPLICATE_RANK_MELD",
-      `Team already has an open meld of rank ${rank}. Add cards to it instead of starting a new one.`,
+      isMono
+        ? "El equipo ya tiene una jugada de monos. Añade comodines a ella en lugar de crear una nueva."
+        : `Team already has an open meld of rank ${rank}. Add cards to it instead of starting a new one.`,
     );
   }
-  if (team.table.canastas.some((c) => c.rank === rank)) {
+  const hasDupCana = isMono
+    ? team.table.canastas.some((c) => c.rank === "2" || c.rank === "JOKER")
+    : team.table.canastas.some((c) => c.rank === rank);
+  if (hasDupCana) {
     return err(
       "DUPLICATE_RANK_MELD",
-      `Team already has a canasta of rank ${rank}. Burn cards to it instead of opening a new meld.`,
+      isMono
+        ? "El equipo ya tiene una canasta de monos. Quema comodines en ella en lugar de abrir una nueva jugada."
+        : `Team already has a canasta of rank ${rank}. Burn cards to it instead of opening a new meld.`,
     );
   }
 
   // Bajada logic (section 9.1)
   const isBajada = !team.hasBajado;
 
-  // A player must always have at least one card left to discard — cannot empty hand by melding.
-  const handAfterMeld = game.players[playerId].hand.filter(
-    (c) => !new Set(opts.cardIds).has(c.id),
-  );
-  if (handAfterMeld.length === 0) {
-    return err(
-      "MUST_KEEP_DISCARD_CARD",
-      "You must keep at least one card to discard. You cannot empty your hand by playing melds.",
-    );
-  }
+  const handCheck2 = validateHandAfterPlay(game, playerId, opts.cardIds);
+  if (!handCheck2.ok) return handCheck2;
 
   // Remove cards from hand
   removeCardsFromHandMutate(game.players[playerId], opts.cardIds);
@@ -635,16 +683,8 @@ export function addToMeld(
     }
   }
 
-  // A player must always have at least one card left to discard.
-  const handAfterAdd = game.players[playerId].hand.filter(
-    (c) => !new Set(cardIds).has(c.id),
-  );
-  if (handAfterAdd.length === 0) {
-    return err(
-      "MUST_KEEP_DISCARD_CARD",
-      "You must keep at least one card to discard. You cannot empty your hand by playing cards.",
-    );
-  }
+  const handCheck2 = validateHandAfterPlay(game, playerId, cardIds);
+  if (!handCheck2.ok) return handCheck2;
 
   removeCardsFromHandMutate(game.players[playerId], cardIds);
   meld.cards.push(...newCards);
@@ -657,13 +697,14 @@ export function addToMeld(
         ? "MONO"
         : wilds === 0 ? "LIMPIA" : "SUCIA";
 
+    // The canasta holds exactly 7 cards; any extras beyond 7 are burned.
     const canasta: Canasta = {
       id:      newCanaId(),
       rank:    meld.rank,
-      cards:   [...meld.cards],
+      cards:   meld.cards.slice(0, 7),
       type,
       closed:  true,
-      burned:  [],
+      burned:  meld.cards.slice(7),
     };
 
     team.table.canastas.push(canasta);
@@ -732,16 +773,8 @@ export function addToCanasta(
     }
   }
 
-  // A player must always have at least one card left to discard.
-  const handAfterCanasta = game.players[playerId].hand.filter(
-    (c) => !new Set(cardIds).has(c.id),
-  );
-  if (handAfterCanasta.length === 0) {
-    return err(
-      "MUST_KEEP_DISCARD_CARD",
-      "You must keep at least one card to discard. You cannot empty your hand by playing cards.",
-    );
-  }
+  const handCheck2 = validateHandAfterPlay(game, playerId, cardIds);
+  if (!handCheck2.ok) return handCheck2;
 
   removeCardsFromHandMutate(game.players[playerId], cardIds);
 
@@ -830,17 +863,25 @@ export function discard(
 
   // Update pilon state (section 8).
   // Triado is sticky: once the pilon is triado it stays triado even if a
-  // natural card is discarded on top. Only a tapa can override it (blocking
-  // the pile entirely), and a new mono discard keeps it triado.
+  // natural card or tapa is discarded on top. A tapa blocks the pile
+  // (tapaActive = true) but does NOT erase the triado requirement — the
+  // pile still needs 3 matching cards once it becomes takeable again.
   if (isMono(card)) {
     round.pilonState = "TRIADO";
     round.tapaActive = false;
   } else if (isTapa(card)) {
-    round.pilonState = "TAPA";
+    // Block the pile. Only update pilonState to TAPA if it wasn't already
+    // TRIADO — a tapa on a triado pile keeps the triado requirement.
     round.tapaActive = true;
-  } else if (round.pilonState !== "TRIADO") {
-    round.pilonState = "NORMAL";
+    if (round.pilonState !== "TRIADO") {
+      round.pilonState = "TAPA";
+    }
+  } else {
+    // Normal card: always clears any tapa block.
     round.tapaActive = false;
+    if (round.pilonState !== "TRIADO") {
+      round.pilonState = "NORMAL";
+    }
   }
 
   // Advance turn

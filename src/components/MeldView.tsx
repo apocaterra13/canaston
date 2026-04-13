@@ -38,7 +38,7 @@ export default function MeldView({ meld, onPress, highlighted = false }: MeldVie
     <View style={[styles.container, highlighted && styles.highlighted]}>
       {/* Rank badge */}
       <View style={[styles.rankBadge, { borderColor: color }]}>
-        <Text style={[styles.rankText, { color }]}>{isMonoMeld ? 'Monos' : meld.rank}</Text>
+        <Text style={[styles.rankText, { color }]} numberOfLines={1} adjustsFontSizeToFit>{isMonoMeld ? 'Monos' : meld.rank}</Text>
       </View>
 
       {/* Composition */}
@@ -107,10 +107,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
-    padding: 8,
-    width: 82,
+    padding: 10,
+    width: 92,
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
   highlighted: {
     borderColor: '#f39c12',
@@ -120,9 +120,11 @@ const styles = StyleSheet.create({
   rankBadge: {
     borderWidth: 1.5,
     borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     backgroundColor: '#fff',
+    alignSelf: 'stretch',
+    alignItems: 'center',
   },
   rankText: {
     fontWeight: 'bold',

@@ -60,6 +60,7 @@ export {
 
 export {
   canIr,
+  canastaEffectiveType,
   countMono,
   err,
   isCleanCanasta,

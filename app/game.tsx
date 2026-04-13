@@ -112,6 +112,18 @@ export default function GameScreen() {
   const canDraw      = phase === 'WAITING_DRAW' && stockCount > 0;
   const hasDrawn     = phase === 'DRAWN_FROM_STOCK' || phase === 'TOOK_PILON';
 
+  // If all selected natural cards share one rank and the team already has an
+  // open meld of that rank, the "Nueva jugada" button becomes "Añadir".
+  const matchingMeldForSelection: Meld | null = (() => {
+    if (!hasDrawn || !currentTeam || selectedCards.length === 0) return null;
+    const naturals = selectedCards.filter((c) => !isMono(c));
+    if (naturals.length === 0) return null; // pure wildcards — rank ambiguous
+    const ranks = new Set(naturals.map((c) => c.rank));
+    if (ranks.size !== 1) return null; // mixed natural ranks
+    const rank = [...ranks][0];
+    return currentTeam.table.melds.find((m) => m.rank === rank) ?? null;
+  })();
+
   // ---------------------------------------------------------------------------
   // Action handlers
   // ---------------------------------------------------------------------------
@@ -567,14 +579,24 @@ export default function GameScreen() {
                 />
               )}
 
-              {/* Lay new meld — needs 3+ selected cards */}
-              <ActionBtn
-                label={selectedCards.length >= 3 ? `Jugada\n(${selectedCards.length})` : 'Nueva jugada'}
-                icon="🃏"
-                color="#16a085"
-                disabled={selectedCards.length < 3}
-                onPress={handleLayMeld}
-              />
+              {/* Lay new meld, or add to existing meld if selection matches one */}
+              {matchingMeldForSelection ? (
+                <ActionBtn
+                  label={`Añadir\n(${selectedCards.length})`}
+                  icon="➕"
+                  color="#16a085"
+                  disabled={selectedCards.length < 1}
+                  onPress={() => handleAddToMeld(matchingMeldForSelection)}
+                />
+              ) : (
+                <ActionBtn
+                  label={selectedCards.length >= 3 ? `Jugada\n(${selectedCards.length})` : 'Nueva jugada'}
+                  icon="🃏"
+                  color="#16a085"
+                  disabled={selectedCards.length < 3}
+                  onPress={handleLayMeld}
+                />
+              )}
 
               {/* Discard — needs exactly 1 selected card */}
               <ActionBtn

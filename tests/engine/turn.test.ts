@@ -422,9 +422,10 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
   }
 
   it('commitBajada sets team.hasBajado to true', () => {
-    const aces  = trio('A', 'a');
-    const extra = makeCard('extra_disc', '7', 'hearts', 5); // kept as discard
-    const game  = makeDrawnGame({ hand: [...aces, extra] });
+    const aces   = trio('A', 'a');
+    const extra  = makeCard('extra_disc', '7', 'hearts', 5);
+    const extra2 = makeCard('extra_disc2', '8', 'hearts', 5); // 2nd spare so 1-card rule doesn't fire
+    const game   = makeDrawnGame({ hand: [...aces, extra, extra2] });
     layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
     const result = commitBajada(game, 'p1');
     expect(result.ok).toBe(true);
@@ -433,9 +434,10 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
 
   it('after p1 bajadas, p3 (partner) can lay melds without any point check', () => {
     // p1 bajadas first — needs an extra card to discard (cannot empty hand by melding)
-    const acesP1  = trio('A', 'ap1');
-    const extraP1 = makeCard('p1_disc', '7', 'hearts', 5);
-    const gameP1  = makeDrawnGame({ hand: [...acesP1, extraP1] });
+    const acesP1   = trio('A', 'ap1');
+    const extraP1  = makeCard('p1_disc', '7', 'hearts', 5);
+    const extraP1b = makeCard('p1_disc2', '8', 'hearts', 5);
+    const gameP1   = makeDrawnGame({ hand: [...acesP1, extraP1, extraP1b] });
     layMeld(gameP1, 'p1', { cardIds: acesP1.map(c => c.id) });
     commitBajada(gameP1, 'p1');
 
@@ -443,7 +445,8 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
     // p3 is also TEAM_NS — hasBajado should already be true.
     const kingsP3  = trio('K', 'kp3');
     const extraP3  = makeCard('p3_disc', '8', 'hearts', 5);
-    gameP1.players['p3'].hand = [...kingsP3, extraP3];
+    const extraP3b = makeCard('p3_disc2', '9', 'hearts', 5);
+    gameP1.players['p3'].hand = [...kingsP3, extraP3, extraP3b];
     gameP1.round!.currentTurnIndex = 2; // p3 is at index 2
     gameP1.turn = {
       playerId: 'p3',
@@ -503,9 +506,10 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
   });
 
   it('discard is blocked when bajada melds are pending and not yet committed', () => {
-    const aces  = trio('A', 'discard_a');
-    const extra = makeCard('extra_K', 'K', 'hearts');
-    const game  = makeDrawnGame({ hand: [...aces, extra] });
+    const aces   = trio('A', 'discard_a');
+    const extra  = makeCard('extra_K', 'K', 'hearts');
+    const extra2 = makeCard('extra_K2', 'K', 'diamonds');
+    const game   = makeDrawnGame({ hand: [...aces, extra, extra2] });
     layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
     // Do NOT call commitBajada
 
@@ -553,8 +557,9 @@ describe('bajada deadlock — extending a pending bajada meld before commitBajad
     // Need an extra discard card so the player doesn't empty their hand by adding to the meld
     const fives = trio('5', 'f', 5);
     const extra = single('5', 'f_extra', 5);
-    const disc  = single('7', 'f_disc', 5); // kept as discard
-    const game  = makeDrawnGame({ hand: [...fives, extra, disc] });
+    const disc  = single('7', 'f_disc', 5);
+    const disc2 = single('8', 'f_disc2', 5); // 2nd spare so 1-card rule doesn't fire
+    const game  = makeDrawnGame({ hand: [...fives, extra, disc, disc2] });
 
     const layResult = layMeld(game, 'p1', { cardIds: fives.map(c => c.id) });
     expect(layResult.ok).toBe(true);
@@ -569,11 +574,12 @@ describe('bajada deadlock — extending a pending bajada meld before commitBajad
 
   it('added cards count toward bajada total in commitBajada', () => {
     // 3 × 5-pt fives = 15 pts, then add 3 more fives (5 pts each) → still 30 pts < 50
-    const fives = trio('5', 'ff', 5);
-    const more  = trio('5', 'ff2', 5);
-    const extra = makeCard('disc_K', 'K', 'hearts', 10);
+    const fives  = trio('5', 'ff', 5);
+    const more   = trio('5', 'ff2', 5);
+    const extra  = makeCard('disc_K', 'K', 'hearts', 10);
+    const extra2 = makeCard('disc_K2', 'K', 'diamonds', 10);
 
-    const game = makeDrawnGame({ hand: [...fives, ...more, extra] });
+    const game = makeDrawnGame({ hand: [...fives, ...more, extra, extra2] });
 
     const layResult = layMeld(game, 'p1', { cardIds: fives.map(c => c.id) });
     expect(layResult.ok).toBe(true);
@@ -590,10 +596,11 @@ describe('bajada deadlock — extending a pending bajada meld before commitBajad
   });
 
   it('commitBajada succeeds once enough cards are in the bajada meld', () => {
-    const aces  = trio('A', 'ace', 20);
-    const extra = makeCard('disc_K', 'K', 'hearts', 10);
+    const aces   = trio('A', 'ace', 20);
+    const extra  = makeCard('disc_K', 'K', 'hearts', 10);
+    const extra2 = makeCard('disc_K2', 'K', 'diamonds', 10);
 
-    const game = makeDrawnGame({ hand: [...aces, extra] });
+    const game = makeDrawnGame({ hand: [...aces, extra, extra2] });
     layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
 
     const result = commitBajada(game, 'p1');
@@ -855,8 +862,9 @@ describe('quemar — burning cards into a closed canasta', () => {
 
   it('burning natural cards of same rank into a closed canasta succeeds', () => {
     const burnCard = makeCard('burn_A', 'A', 'spades', 20);
-    const disc     = makeCard('burn_disc', '7', 'hearts', 5); // kept as discard
-    const game = makeDrawnGame({ hand: [burnCard, disc], hasBajado: true });
+    const disc     = makeCard('burn_disc', '7', 'hearts', 5);
+    const disc2    = makeCard('burn_disc2', '8', 'hearts', 5); // 2nd spare so 1-card rule doesn't fire
+    const game = makeDrawnGame({ hand: [burnCard, disc, disc2], hasBajado: true });
 
     game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
 
@@ -1020,18 +1028,18 @@ describe('must keep at least one card to discard', () => {
     expect(result.error.code).toBe('MUST_KEEP_DISCARD_CARD');
   });
 
-  it('layMeld succeeds when at least one card remains after playing', () => {
-    const q1    = makeCard('q1', 'Q', 'hearts', 10);
-    const q2    = makeCard('q2', 'Q', 'diamonds', 10);
-    const q3    = makeCard('q3', 'Q', 'clubs', 10);
-    const extra = makeCard('extra_7', '7', 'hearts', 5);
+  it('layMeld succeeds when at least two cards remain (no ida conditions met)', () => {
+    const q1     = makeCard('q1', 'Q', 'hearts', 10);
+    const q2     = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3     = makeCard('q3', 'Q', 'clubs', 10);
+    const extra1 = makeCard('extra_7', '7', 'hearts', 5);
+    const extra2 = makeCard('extra_8', '8', 'hearts', 5);
 
-    const game = makeDrawnGame({ hand: [q1, q2, q3, extra], hasBajado: true });
+    const game = makeDrawnGame({ hand: [q1, q2, q3, extra1, extra2], hasBajado: true });
 
     const result = layMeld(game, 'p1', { cardIds: [q1.id, q2.id, q3.id] });
     expect(result.ok).toBe(true);
-    expect(game.players['p1'].hand).toHaveLength(1);
-    expect(game.players['p1'].hand[0].id).toBe(extra.id);
+    expect(game.players['p1'].hand).toHaveLength(2);
   });
 
   it('addToMeld rejects if adding all cards would leave hand empty', () => {
@@ -1041,12 +1049,145 @@ describe('must keep at least one card to discard', () => {
     const q4 = makeCard('q4', 'Q', 'spades', 10);
 
     const game = makeDrawnGame({ hand: [q4], hasBajado: true });
-    // Place an existing meld on the team table
     game.teams['TEAM_NS'].table.melds.push({ id: 'meld_Q', rank: 'Q', cards: [q1, q2, q3] });
 
     const result = addToMeld(game, 'p1', 'meld_Q', [q4.id]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('MUST_KEEP_DISCARD_CARD');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cannot leave exactly one card without ida conditions
+// ---------------------------------------------------------------------------
+
+describe('cannot leave exactly one card without limpia+sucia', () => {
+  function makeLimpia(rank: Card['rank'], id: string): import('../../engine/types').Canasta {
+    const cards = Array.from({ length: 7 }, (_, i): Card => ({
+      id: `${id}_c${i}`, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0,
+    }));
+    return { id, rank, cards, type: 'LIMPIA', closed: true, burned: [] };
+  }
+  function makeSucia(rank: Card['rank'], id: string): import('../../engine/types').Canasta {
+    const naturals: Card[] = Array.from({ length: 5 }, (_, i) =>
+      makeCard(`${id}_n${i}`, rank, 'hearts', 10),
+    );
+    const wilds: Card[] = [
+      makeCard(`${id}_w1`, '2', 'hearts', 20),
+      makeCard(`${id}_w2`, '2', 'hearts', 20),
+    ];
+    return { id, rank, cards: [...naturals, ...wilds], type: 'SUCIA', closed: true, burned: [] };
+  }
+
+  it('layMeld rejects leaving 1 card when no limpia+sucia', () => {
+    const q1    = makeCard('q1', 'Q', 'hearts', 10);
+    const q2    = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3    = makeCard('q3', 'Q', 'clubs', 10);
+    const extra = makeCard('extra_9', '9', 'hearts', 5);
+
+    const game = makeDrawnGame({ hand: [q1, q2, q3, extra], hasBajado: true });
+    // No canastas — ida not possible
+
+    const result = layMeld(game, 'p1', { cardIds: [q1.id, q2.id, q3.id] });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('CANNOT_LEAVE_ONE_CARD');
+  });
+
+  it('addToMeld rejects leaving 1 card when no limpia+sucia', () => {
+    const q1   = makeCard('q1', 'Q', 'hearts', 10);
+    const q2   = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3   = makeCard('q3', 'Q', 'clubs', 10);
+    const q4   = makeCard('q4', 'Q', 'spades', 10);
+    const disc = makeCard('disc_9', '9', 'hearts', 5);
+
+    const game = makeDrawnGame({ hand: [q4, disc], hasBajado: true });
+    game.teams['TEAM_NS'].table.melds.push({ id: 'meld_Q', rank: 'Q', cards: [q1, q2, q3] });
+
+    // Adding q4 leaves only `disc` — no limpia+sucia → reject
+    const result = addToMeld(game, 'p1', 'meld_Q', [q4.id]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('CANNOT_LEAVE_ONE_CARD');
+  });
+
+  it('layMeld allows leaving 1 card when team has limpia+sucia (player can ida)', () => {
+    const q1    = makeCard('q1', 'Q', 'hearts', 10);
+    const q2    = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3    = makeCard('q3', 'Q', 'clubs', 10);
+    const extra = makeCard('extra_9', '9', 'hearts', 5);
+
+    const game = makeDrawnGame({ hand: [q1, q2, q3, extra], hasBajado: true });
+    game.teams['TEAM_NS'].table.canastas.push(
+      makeLimpia('A', 'cana_limpia'),
+      makeSucia('K', 'cana_sucia'),
+    );
+
+    const result = layMeld(game, 'p1', { cardIds: [q1.id, q2.id, q3.id] });
+    expect(result.ok).toBe(true);
+    expect(game.players['p1'].hand).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TRIADO sticky — tapa on triado pile must not erase the triado requirement
+// ---------------------------------------------------------------------------
+
+describe('TRIADO sticky — tapa does not override triado pilonState', () => {
+  function makeTapa(id: string): Card {
+    return { id, rank: '3', suit: 'spades', category: 'TAPA', points: 0, deckIndex: 0 };
+  }
+  function makeNormal(id: string): Card {
+    return makeCard(id, '7', 'hearts', 5);
+  }
+
+  /** Helper: simulate a discard turn (set phase, then call discard). */
+  function doDiscard(game: GameStateData, playerId: string, card: Card): void {
+    game.turn = {
+      playerId,
+      phase: 'DRAWN_FROM_STOCK',
+      drawnCards: [],
+      tookPilon: false,
+      pilonMatchCards: [],
+      bajadaMeldIds: [],
+    };
+    // Put the card in the player's hand plus a spare so the hand isn't emptied
+    const spare = makeCard(`spare_${card.id}`, '8', 'clubs', 5);
+    game.players[playerId].hand = [card, spare];
+    discard(game, playerId, card.id);
+    // beginTurn sets up the next player — skip for test simplicity
+    game.turn = null;
+  }
+
+  it('pilonState stays TRIADO after a tapa is discarded on a triado pile', () => {
+    const game = makeGame({ pilonState: 'TRIADO', pilon: [makeCard('joker', 'JOKER', 'hearts', 50)] });
+    game.round!.pilonState = 'TRIADO';
+
+    const tapa = makeTapa('t1');
+    doDiscard(game, 'p1', tapa);
+
+    expect(game.round!.pilonState).toBe('TRIADO');
+    expect(game.round!.tapaActive).toBe(true);
+  });
+
+  it('pilonState stays TRIADO after a normal card is discarded following a tapa on triado', () => {
+    const game = makeGame({ pilonState: 'TRIADO', pilon: [makeCard('joker', 'JOKER', 'hearts', 50)] });
+    game.round!.pilonState = 'TRIADO';
+
+    doDiscard(game, 'p1', makeTapa('t1'));   // tapa goes on triado pile
+    doDiscard(game, 'p2', makeNormal('n1')); // normal card goes on top of tapa
+
+    expect(game.round!.pilonState).toBe('TRIADO');
+    expect(game.round!.tapaActive).toBe(false); // tapa block lifted
+  });
+
+  it('tapa on a normal (non-triado) pile keeps pilonState as TAPA', () => {
+    const game = makeGame({ pilonState: 'NORMAL', pilon: [makeCard('k1', 'K', 'hearts', 10)] });
+
+    doDiscard(game, 'p1', makeTapa('t1'));
+
+    expect(game.round!.pilonState).toBe('TAPA');
+    expect(game.round!.tapaActive).toBe(true);
   });
 });
