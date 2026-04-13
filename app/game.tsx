@@ -448,6 +448,13 @@ export default function GameScreen() {
           </TouchableOpacity>
         ) : (
           <View style={styles.handWithHideBtn}>
+            <TouchableOpacity
+              style={styles.hideHandBtn}
+              onPress={store.hideHand}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.hideHandBtnText}>🙈 Ocultar mano</Text>
+            </TouchableOpacity>
             <HandView
               ref={handRef}
               cards={currentPlayer?.hand ?? []}
@@ -455,13 +462,6 @@ export default function GameScreen() {
               onSelectionChange={setSelectedCards}
               newCardIds={newCardIds}
             />
-            <TouchableOpacity
-              style={styles.hideHandBtn}
-              onPress={store.hideHand}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.hideHandBtnText}>🙈 Ocultar</Text>
-            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -1087,10 +1087,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hideHandBtn: {
-    alignSelf: 'flex-end',
-    marginTop: 4,
-    marginRight: 8,
-    paddingHorizontal: 14,
+    alignSelf: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 16,
     paddingVertical: 5,
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.25)',
