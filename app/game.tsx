@@ -427,6 +427,16 @@ export default function GameScreen() {
             <Text style={styles.bajadaMinText}>Min {bajadaMin} pts</Text>
           </View>
         )}
+        {handVisible && (
+          <TouchableOpacity
+            style={styles.hideHandBtn}
+            onPress={store.hideHand}
+            activeOpacity={0.75}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.hideHandBtnText}>🙈 Ocultar</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.rulesBtn}
           onPress={() => router.push('/rules')}
@@ -447,22 +457,13 @@ export default function GameScreen() {
             <Text style={styles.showHandBtnText}>👁 Mostrar mi mano</Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.handWithHideBtn}>
-            <TouchableOpacity
-              style={styles.hideHandBtn}
-              onPress={store.hideHand}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.hideHandBtnText}>🙈 Ocultar mano</Text>
-            </TouchableOpacity>
-            <HandView
-              ref={handRef}
-              cards={currentPlayer?.hand ?? []}
-              label={currentPlayer?.name}
-              onSelectionChange={setSelectedCards}
-              newCardIds={newCardIds}
-            />
-          </View>
+          <HandView
+            ref={handRef}
+            cards={currentPlayer?.hand ?? []}
+            label={currentPlayer?.name}
+            onSelectionChange={setSelectedCards}
+            newCardIds={newCardIds}
+          />
         )}
       </View>
 
@@ -1083,22 +1084,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 4,
   },
-  handWithHideBtn: {
-    flex: 1,
-  },
   hideHandBtn: {
-    alignSelf: 'center',
-    marginBottom: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.25)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
   },
   hideHandBtnText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
     fontWeight: '600',
   },
   showHandBtn: {
