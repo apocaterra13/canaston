@@ -40,9 +40,10 @@ export default function MeldView({ meld, onPress, highlighted = false }: MeldVie
 
       {/* Composition: natural count + wild count */}
       <View style={styles.stats}>
-        <Text style={[styles.naturalCount, { color }]}>
-          🂠×{naturalCount}
-        </Text>
+        <View style={styles.naturalPill}>
+          <View style={styles.cardIcon} />
+          <Text style={styles.naturalCount}>×{naturalCount}</Text>
+        </View>
         {wildCount > 0 && (
           <Text style={styles.wildBadge}>🃏×{wildCount}</Text>
         )}
@@ -111,8 +112,21 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
+  naturalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  cardIcon: {
+    width: 10,
+    height: 14,
+    borderRadius: 2,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.25)',
+  },
   naturalCount: {
-    color: '#ecf0f1',
+    color: '#fff',
     fontSize: 10,
     fontWeight: '600',
   },
