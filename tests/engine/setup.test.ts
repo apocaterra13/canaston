@@ -136,46 +136,48 @@ describe('resolveSorteo — turn order always alternates teams', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Shared helpers for executeInicioRonda tests
+// ---------------------------------------------------------------------------
+
+/** Build a game ready for executeInicioRonda with a controlled stock. */
+function buildReadyGame(stockCards: Card[]) {
+  const game = buildSorteoGame();
+  seedSorteoCards(game, {
+    norte: makeCard('A', 'c_norte'),
+    este:  makeCard('K', 'c_este'),
+    sur:   makeCard('Q', 'c_sur'),
+    oeste: makeCard('J', 'c_oeste'),
+  });
+  const r1 = resolveSorteo(game);
+  if (!r1.ok) throw new Error('resolveSorteo failed');
+  const { turnOrder, picadorId, repartidorId } = r1.data;
+  const r2 = executePicada(game, turnOrder, picadorId, repartidorId);
+  if (!r2.ok) throw new Error('executePicada failed');
+  const r3 = executeReparto(game);
+  if (!r3.ok) throw new Error('executeReparto failed');
+
+  game.round!.stock = stockCards;
+  game.state = 'INICIO_RONDA';
+  return game;
+}
+
+function card3red(id: string): Card {
+  return { id, rank: '3', suit: 'hearts', category: 'HONOR', points: 0, deckIndex: 0 };
+}
+
+function card3black(id: string): Card {
+  return { id, rank: '3', suit: 'spades', category: 'TAPA', points: 0, deckIndex: 0 };
+}
+
+function cardNormal(rank: Card['rank'], id: string): Card {
+  return { id, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0 };
+}
+
+// ---------------------------------------------------------------------------
 // executeInicioRonda — initial pilon card can never be a 3
 // ---------------------------------------------------------------------------
 
 describe('executeInicioRonda — initial pilon card', () => {
-  /** Build a game ready for executeInicioRonda with a controlled stock. */
-  function buildReadyGame(stockCards: Card[]) {
-    const game = buildSorteoGame();
-    // Seed sorteo to get consistent teams/picador
-    seedSorteoCards(game, {
-      norte: makeCard('A', 'c_norte'),
-      este:  makeCard('K', 'c_este'),
-      sur:   makeCard('Q', 'c_sur'),
-      oeste: makeCard('J', 'c_oeste'),
-    });
-    const r1 = resolveSorteo(game);
-    if (!r1.ok) throw new Error('resolveSorteo failed');
-    const { turnOrder, picadorId, repartidorId } = r1.data;
-    const r2 = executePicada(game, turnOrder, picadorId, repartidorId);
-    if (!r2.ok) throw new Error('executePicada failed');
-    const r3 = executeReparto(game);
-    if (!r3.ok) throw new Error('executeReparto failed');
-
-    // Override the stock with our controlled cards
-    game.round!.stock = stockCards;
-    game.state = 'INICIO_RONDA';
-
-    return game;
-  }
-
-  function card3red(id: string): Card {
-    return { id, rank: '3', suit: 'hearts', category: 'HONOR', points: 0, deckIndex: 0 };
-  }
-
-  function card3black(id: string): Card {
-    return { id, rank: '3', suit: 'spades', category: 'TAPA', points: 0, deckIndex: 0 };
-  }
-
-  function cardNormal(rank: Card['rank'], id: string): Card {
-    return { id, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0 };
-  }
 
   it('uses the first card when it is a normal card', () => {
     // Stock is drawn from the end (LIFO), so the target card must be last.
@@ -226,6 +228,60 @@ describe('executeInicioRonda — initial pilon card', () => {
     if (result.ok) {
       const pilonTop = game.round!.pilon[0];
       expect(pilonTop.rank).not.toBe('3');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// executeInicioRonda — burying count matches card value
+// ---------------------------------------------------------------------------
+
+describe('executeInicioRonda — cards buried under pilon equals card value', () => {
+  /** Stock drawn LIFO — opener must be the last element. */
+  function stockWith(openerRank: Card['rank'], openerCategory: Card['category']): Card[] {
+    const opener: Card = {
+      id: `opener_${openerRank}`,
+      rank: openerRank,
+      suit: 'hearts',
+      category: openerCategory,
+      points: 10,
+      deckIndex: 0,
+    };
+    // Provide 30 filler cards so Math.min never caps the bury count (max is 25 for JOKER).
+    const fillers: Card[] = Array.from({ length: 30 }, (_, i): Card => ({
+      id: `filler_${i}`,
+      rank: '4',
+      suit: 'hearts',
+      category: 'NORMAL',
+      points: 5,
+      deckIndex: 0,
+    }));
+    return [...fillers, opener]; // opener is last → drawn first
+  }
+
+  const cases: Array<{ rank: Card['rank']; category: Card['category']; buried: number }> = [
+    { rank: '4',     category: 'NORMAL', buried: 4  },
+    { rank: '5',     category: 'NORMAL', buried: 5  },
+    { rank: '6',     category: 'NORMAL', buried: 6  },
+    { rank: '7',     category: 'NORMAL', buried: 7  },
+    { rank: '8',     category: 'NORMAL', buried: 8  },
+    { rank: '9',     category: 'NORMAL', buried: 9  },
+    { rank: '10',    category: 'NORMAL', buried: 10 },
+    { rank: 'J',     category: 'NORMAL', buried: 11 },
+    { rank: 'Q',     category: 'NORMAL', buried: 12 },
+    { rank: 'K',     category: 'NORMAL', buried: 13 },
+    { rank: 'A',     category: 'NORMAL', buried: 14 },
+    { rank: '2',     category: 'PATO',   buried: 20 },
+    { rank: 'JOKER', category: 'JOKER',  buried: 25 },
+  ];
+
+  it.each(cases)('rank $rank buries $buried cards', ({ rank, category, buried }) => {
+    const game = buildReadyGame(stockWith(rank, category));
+    const result = executeInicioRonda(game);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.flippedCard.rank).toBe(rank);
+      expect(result.data.cardsBuriedUnderPilon).toBe(buried);
     }
   });
 });
