@@ -390,14 +390,19 @@ export function commitBajada(
 
   const minimum = getBajadaMinimum(team.globalScore);
 
-  // Only count melds laid by THIS player in THIS turn (bajadaMeldIds).
+  // Only count melds/canastas laid by THIS player in THIS turn (bajadaMeldIds).
   // This prevents partner melds from previous turns from inflating the total.
+  // A bajada meld that closed into a canasta this turn has its canasta ID tracked too.
   const bajadaMeldSet = new Set(game.turn!.bajadaMeldIds);
 
   let total = 0;
   for (const meld of team.table.melds) {
     if (!bajadaMeldSet.has(meld.id)) continue;
     for (const c of meld.cards) total += c.points;
+  }
+  for (const cana of team.table.canastas) {
+    if (!bajadaMeldSet.has(cana.id)) continue;
+    for (const c of cana.cards) total += c.points;
   }
 
   if (total < minimum) {
@@ -436,15 +441,18 @@ export function addToMeld(
 
   const newCards  = handCheck.data;
   const { team }  = getTeamForPlayer(game, playerId);
-
-  // Team must have bajada to add to melds
-  if (!team.hasBajado) {
-    return err("NO_BAJADA", "Team must make their bajada before adding to melds.");
-  }
+  const ctx       = game.turn!;
 
   const meld = team.table.melds.find((m) => m.id === meldId);
   if (!meld) {
     return err("MELD_NOT_FOUND", `Meld ${meldId} not found on team table.`);
+  }
+
+  // Team must have bajada to add to melds — UNLESS this meld is part of the
+  // current bajada attempt (player is still building up to the point minimum).
+  const isBajadaMeld = ctx.bajadaMeldIds.includes(meldId);
+  if (!team.hasBajado && !isBajadaMeld) {
+    return err("NO_BAJADA", "Team must make their bajada before adding to melds.");
   }
 
   const addCheck = validateAddToMeld(meld, newCards);
@@ -480,6 +488,13 @@ export function addToMeld(
 
     team.table.canastas.push(canasta);
     team.table.melds = team.table.melds.filter((m) => m.id !== meldId);
+
+    // If this meld was part of a pending bajada, replace its ID with the
+    // canasta ID so commitBajada can still count those cards.
+    if (isBajadaMeld) {
+      ctx.bajadaMeldIds = ctx.bajadaMeldIds.filter(id => id !== meldId);
+      ctx.bajadaMeldIds.push(canasta.id);
+    }
 
     // Resolve mono-obligado
     if (type === "MONO") {

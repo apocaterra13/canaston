@@ -1,4 +1,4 @@
-import { takePilon, layMeld, commitBajada, discard } from '../../engine/turn';
+import { takePilon, layMeld, commitBajada, discard, addToMeld } from '../../engine/turn';
 import type {
   Card,
   GameStateData,
@@ -511,5 +511,87 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
 
     const result = discard(game, 'p1', extra1.id);
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bajada deadlock fix — player can extend their own pending bajada melds
+// ---------------------------------------------------------------------------
+
+describe('bajada deadlock — extending a pending bajada meld before commitBajada', () => {
+  /** 3-card meld worth pts-per-card × 3 */
+  function trio(rank: Card['rank'], prefix: string, pts = 20): Card[] {
+    return [
+      makeCard(`${prefix}_1`, rank, 'hearts', pts),
+      makeCard(`${prefix}_2`, rank, 'diamonds', pts),
+      makeCard(`${prefix}_3`, rank, 'clubs', pts),
+    ];
+  }
+  function single(rank: Card['rank'], id: string, pts = 20): Card {
+    return makeCard(id, rank, 'spades', pts);
+  }
+
+  it('allows adding cards to a pending bajada meld (NO_BAJADA no longer blocks)', () => {
+    // Lay a meld worth 15 pts — below the 50-pt minimum
+    const fives = trio('5', 'f', 5);
+    const extra = single('5', 'f_extra', 5);
+    const game  = makeDrawnGame({ hand: [...fives, extra] });
+
+    const layResult = layMeld(game, 'p1', { cardIds: fives.map(c => c.id) });
+    expect(layResult.ok).toBe(true);
+    if (!layResult.ok) return;
+
+    const meldId = layResult.data.meld.id;
+
+    // Before fix this returned NO_BAJADA and deadlocked the game
+    const addResult = addToMeld(game, 'p1', meldId, [extra.id]);
+    expect(addResult.ok).toBe(true);
+  });
+
+  it('added cards count toward bajada total in commitBajada', () => {
+    // 3 × 5-pt fives = 15 pts, then add 3 more fives (5 pts each) → still 30 pts < 50
+    const fives = trio('5', 'ff', 5);
+    const more  = trio('5', 'ff2', 5);
+    const extra = makeCard('disc_K', 'K', 'hearts', 10);
+
+    const game = makeDrawnGame({ hand: [...fives, ...more, extra] });
+
+    const layResult = layMeld(game, 'p1', { cardIds: fives.map(c => c.id) });
+    expect(layResult.ok).toBe(true);
+    if (!layResult.ok) return;
+    const meldId = layResult.data.meld.id;
+
+    const addResult = addToMeld(game, 'p1', meldId, more.map(c => c.id));
+    expect(addResult.ok).toBe(true);
+
+    // 6 × 5-pts = 30 pts — still below 50
+    const commitFail = commitBajada(game, 'p1');
+    expect(commitFail.ok).toBe(false);
+    if (!commitFail.ok) expect(commitFail.error.code).toBe('BAJADA_MINIMUM_NOT_MET');
+  });
+
+  it('commitBajada succeeds once enough cards are in the bajada meld', () => {
+    const aces  = trio('A', 'ace', 20);
+    const extra = makeCard('disc_K', 'K', 'hearts', 10);
+
+    const game = makeDrawnGame({ hand: [...aces, extra] });
+    layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
+
+    const result = commitBajada(game, 'p1');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.totalPoints).toBe(60);
+  });
+
+  it('non-bajada meld still requires hasBajado (cannot extend a meld from a previous turn)', () => {
+    const aces  = trio('A', 'prev', 20);
+    const extra = makeCard('ext_A', 'A', 'spades', 20);
+
+    const game = makeDrawnGame({ hand: [extra] });
+    // Manually put a meld on the table that is NOT tracked in bajadaMeldIds
+    game.teams['TEAM_NS'].table.melds.push({ id: 'old_meld', rank: 'A', cards: aces });
+
+    const result = addToMeld(game, 'p1', 'old_meld', [extra.id]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('NO_BAJADA');
   });
 });
