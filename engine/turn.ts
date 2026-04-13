@@ -23,6 +23,7 @@ import {
   sumCardPoints,
   canastaBaseScore,
   getBajadaMinimum,
+  sortHand,
 } from "./deck";
 import {
   ok,
@@ -140,6 +141,7 @@ export function forceLayHonors(
       replaced.push(rep);
     }
   }
+  player.hand = sortHand(player.hand);
 
   return ok({ laidHonors: honors, drawnReplacements: replaced });
 }
@@ -171,6 +173,7 @@ export function drawFromStock(
     // Only 1 card left — draw it and signal
     const [last] = drawCards(round.stock, 1);
     game.players[playerId].hand.push(last);
+    game.players[playerId].hand = sortHand(game.players[playerId].hand);
     game.turn!.drawnCards = [last];
     game.turn!.phase      = "DRAWN_FROM_STOCK";
     return ok({ drawn: [last, last] }); // degenerate case
@@ -178,6 +181,7 @@ export function drawFromStock(
 
   const drawn = drawCards(round.stock, 2) as [Card, Card];
   game.players[playerId].hand.push(...drawn);
+  game.players[playerId].hand = sortHand(game.players[playerId].hand);
   game.turn!.drawnCards = drawn;
   game.turn!.phase      = "DRAWN_FROM_STOCK";
 
@@ -254,8 +258,9 @@ export function takePilon(
   const player = game.players[playerId];
   removeCardsFromHandMutate(player, matchCardIds);
 
-  // Add all pilon cards to hand
+  // Add all pilon cards to hand (sorted)
   player.hand.push(...pilonCards);
+  player.hand = sortHand(player.hand);
 
   // Update turn context
   const ctx        = game.turn!;

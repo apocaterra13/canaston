@@ -12,7 +12,7 @@ import type {
   Team,
   TeamId,
 } from "./types";
-import { buildFullDeck, drawCards, isMono, isHonor, rankValue, shuffle } from "./deck";
+import { buildFullDeck, drawCards, isMono, isHonor, rankValue, shuffle, sortHand } from "./deck";
 import { err, ok, requireState } from "./validation";
 
 // ---------------------------------------------------------------------------
@@ -292,9 +292,10 @@ export function executePicada(
     picadaSpecialCards: [...keptByPicador],
   };
 
-  // Give special cards to picador
+  // Give special cards to picador (sorted)
   if (keptByPicador.length > 0) {
     game.players[picadorId].hand.push(...keptByPicador);
+    game.players[picadorId].hand = sortHand(game.players[picadorId].hand);
   }
 
   game.state = "REPARTO_INICIAL";
@@ -338,6 +339,7 @@ export function executeReparto(game: GameStateData): ActionResult<void> {
         }
         const dealt = drawCards(stock, give);
         game.players[pid].hand.push(...dealt);
+        game.players[pid].hand = sortHand(game.players[pid].hand);
         needs[pid] -= give;
         remaining -= give;
       }

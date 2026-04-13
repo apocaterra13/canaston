@@ -13,6 +13,7 @@ interface CardViewProps {
   onPress?: (card: Card) => void;
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
+  isNew?: boolean;
 }
 
 const SIZES = {
@@ -58,6 +59,7 @@ export default function CardView({
   onPress,
   size = 'md',
   disabled = false,
+  isNew = false,
 }: CardViewProps) {
   const dim = SIZES[size];
 
@@ -70,23 +72,31 @@ export default function CardView({
   const { rank, suit, color, accent } = cardDisplay(card);
 
   const content = (
-    <View
-      style={[
-        styles.card,
-        { width: dim.width, height: dim.height },
-        selected && styles.selected,
-        disabled && styles.disabled,
-      ]}
-    >
-      <Text style={[styles.rank, { fontSize: dim.rankSize, color }]} numberOfLines={1}>
-        {rank}
-      </Text>
-      {suit ? (
-        <Text style={[styles.suit, { fontSize: dim.suitSize, color }]}>{suit}</Text>
-      ) : null}
-      {accent ? (
-        <Text style={styles.accent}>{accent}</Text>
-      ) : null}
+    <View style={styles.cardWrapper}>
+      {isNew && (
+        <View style={styles.newBadge}>
+          <Text style={styles.newBadgeText}>NEW</Text>
+        </View>
+      )}
+      <View
+        style={[
+          styles.card,
+          { width: dim.width, height: dim.height },
+          selected && styles.selected,
+          disabled && styles.disabled,
+          isNew && styles.newHighlight,
+        ]}
+      >
+        <Text style={[styles.rank, { fontSize: dim.rankSize, color }]} numberOfLines={1}>
+          {rank}
+        </Text>
+        {suit ? (
+          <Text style={[styles.suit, { fontSize: dim.suitSize, color }]}>{suit}</Text>
+        ) : null}
+        {accent ? (
+          <Text style={styles.accent}>{accent}</Text>
+        ) : null}
+      </View>
     </View>
   );
 
@@ -106,6 +116,26 @@ export default function CardView({
 }
 
 const styles = StyleSheet.create({
+  cardWrapper: {
+    alignItems: 'center',
+  },
+  newBadge: {
+    backgroundColor: '#27ae60',
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    marginBottom: 2,
+  },
+  newBadgeText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  newHighlight: {
+    borderColor: '#27ae60',
+    borderWidth: 2,
+  },
   card: {
     backgroundColor: '#fff',
     borderRadius: 6,

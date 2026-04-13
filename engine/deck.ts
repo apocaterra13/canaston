@@ -58,6 +58,37 @@ export function isTapa(card: Card): boolean {
   return card.category === "TAPA";
 }
 
+// ---------------------------------------------------------------------------
+// Hand sorting (section 7 display convention)
+// Order: black 3s (TAPA), A, 4, 5, 6, 7, 8, 9, 10, J, Q, K, 2 (PATO), JOKER
+// Red 3s (HONOR) are normally force-laid; if present in hand they sort last.
+// ---------------------------------------------------------------------------
+
+const HAND_SORT_KEY: Partial<Record<string, number>> = {
+  "TAPA":  0,  // black 3 — category-based slot
+  "HONOR": 1,  // red 3 — force-laid immediately, but guard slot
+};
+
+const HAND_RANK_KEY: Partial<Record<string, number>> = {
+  "A":    2,
+  "4":    3,  "5":  4,  "6":  5,  "7":  6,
+  "8":    7,  "9":  8,  "10": 9,
+  "J":   10,  "Q": 11,  "K": 12,
+  "2":   13,
+  "JOKER": 14,
+};
+
+function handSortIndex(card: Card): number {
+  const byCategory = HAND_SORT_KEY[card.category];
+  if (byCategory !== undefined) return byCategory;
+  return HAND_RANK_KEY[card.rank] ?? 99;
+}
+
+/** Returns a new array with the cards sorted into standard hand order. */
+export function sortHand(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => handSortIndex(a) - handSortIndex(b));
+}
+
 export function isWild(card: Card): boolean {
   return isMono(card);
 }

@@ -100,6 +100,7 @@ export default function GameScreen() {
   const hasBajado     = currentTeam?.hasBajado ?? false;
   const bajadaMin     = store.getBajadaMinForCurrentTeam();
   const matchesNeeded = store.getPilonMatchesNeeded();
+  const newCardIds    = new Set((game.turn?.drawnCards ?? []).map((c) => c.id));
 
   // Can take pilon: not empty, not TAPA, and after drawing have relevant cards
   const canTakePilon = pilonState !== 'EMPTY' && pilonState !== 'TAPA' && !tapaActive && phase === 'WAITING_DRAW';
@@ -448,6 +449,7 @@ export default function GameScreen() {
             cards={currentPlayer?.hand ?? []}
             label={currentPlayer?.name}
             onSelectionChange={setSelectedCards}
+            newCardIds={newCardIds}
           />
         )}
       </View>

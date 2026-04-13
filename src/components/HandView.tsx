@@ -29,6 +29,8 @@ interface HandViewProps {
   onSelectionChange?: (selected: Card[]) => void;
   /** IDs of cards that are not selectable (e.g. already used as pilon match) */
   disabledCardIds?: Set<string>;
+  /** IDs of cards received this turn — rendered with a NEW badge */
+  newCardIds?: Set<string>;
 }
 
 const HandView = forwardRef<HandViewRef, HandViewProps>(function HandView(
@@ -39,6 +41,7 @@ const HandView = forwardRef<HandViewRef, HandViewProps>(function HandView(
     maxSelected = Infinity,
     onSelectionChange,
     disabledCardIds = EMPTY_DISABLED_SET,
+    newCardIds,
   },
   ref,
 ) {
@@ -89,6 +92,7 @@ const HandView = forwardRef<HandViewRef, HandViewProps>(function HandView(
             faceDown={faceDown}
             selected={selectedIds.has(card.id)}
             disabled={disabledCardIds.has(card.id)}
+            isNew={newCardIds?.has(card.id) ?? false}
             onPress={toggleCard}
             size="md"
           />
