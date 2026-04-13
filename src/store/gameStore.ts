@@ -57,6 +57,11 @@ export interface GameStore {
   passDeviceVisible: boolean;
   /** Last engine error message, cleared by clearError() */
   lastError: string | null;
+  /**
+   * Honors (red 3s) the current player just received from the stock or pilon
+   * and must acknowledge before continuing their turn.
+   */
+  pendingHonors: Card[];
 
   // ── Initialization ───────────────────────────────────────────────────────
   createNewGame: (names: [string, string, string, string]) => void;
@@ -69,6 +74,8 @@ export interface GameStore {
   playerAddToMeld: (meldId: string, cardIds: string[]) => ActionResult<{ meld: Meld; closed: boolean; canasta?: Canasta }>;
   playerAddToCanasta: (canastaId: string, cardIds: string[]) => ActionResult<{ canasta: Canasta }>;
   playerDiscard: (cardId: string) => ActionResult<{ discardedCard: Card; pilonState: PilonState; roundEnded: boolean }>;
+  /** Player acknowledges their pending honors: lays them on the table and draws replacements. */
+  acknowledgePendingHonors: () => void;
 
   // ── Round / game lifecycle ────────────────────────────────────────────────
   playerFinalizeRound: () => ActionResult<{ gameOver: boolean; winner: TeamId | 'DRAW' | null }>;
@@ -110,6 +117,17 @@ function autoLayHonors(game: GameStateData) {
   }
 }
 
+/**
+ * Returns any honors (red 3s) currently in the active player's hand.
+ * Used after drawing/taking pilon to detect honors that need to be
+ * acknowledged by the player before they continue.
+ */
+function collectPendingHonors(game: GameStateData): Card[] {
+  if (!game.turn) return [];
+  const player = game.players[game.turn.playerId];
+  return player?.hand.filter((c) => c.category === 'HONOR') ?? [];
+}
+
 function noGameErr<T = never>(): ActionResult<T> {
   const err: ActionErr = {
     ok: false,
@@ -135,6 +153,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   handVisible: false,
   passDeviceVisible: false,
   lastError: null,
+  pendingHonors: [],
 
   // ── Initialization ───────────────────────────────────────────────────────
 
@@ -200,7 +219,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const result = engineDrawFromStock(game, game.turn.playerId);
     if (result.ok) {
-      set({ game: forceRerender(game) });
+      // Surface any honors received so the player must acknowledge them.
+      const honors = collectPendingHonors(game);
+      set({ game: forceRerender(game), pendingHonors: honors });
     } else {
       set({ lastError: result.error.message });
     }
@@ -214,11 +235,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const result = engineTakePilon(game, game.turn.playerId, matchCardIds, additionalMeldGroups);
     if (result.ok) {
-      set({ game: forceRerender(game) });
+      // Surface any honors found in the pilon cards.
+      const honors = collectPendingHonors(game);
+      set({ game: forceRerender(game), pendingHonors: honors });
     } else {
       set({ lastError: result.error.message });
     }
     return result;
+  },
+
+  acknowledgePendingHonors() {
+    const game = get().game;
+    if (!game?.turn) return;
+    forceLayHonors(game, game.turn.playerId);
+    set({ game: forceRerender(game), pendingHonors: [] });
   },
 
   playerLayMeld(cardIds, isBajadaInitial = false) {
@@ -371,7 +401,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hideHand()  { set({ handVisible: false }); },
   acknowledgePassDevice() { set({ passDeviceVisible: false }); },
   clearError() { set({ lastError: null }); },
-  resetGame()  { set({ game: null, handVisible: false, passDeviceVisible: false, lastError: null }); },
+  resetGame()  { set({ game: null, handVisible: false, passDeviceVisible: false, lastError: null, pendingHonors: [] }); },
 
   // ── Derived helpers ───────────────────────────────────────────────────────
 
@@ -411,8 +441,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   getPilonMatchesNeeded() {
-    const state = get().game?.round?.pilonState;
-    return state === 'TRIADO' ? 3 : 2;
+    const { game } = get();
+    if (!game?.round) return 2;
+    const topCard = game.round.pilon.length > 0
+      ? game.round.pilon[game.round.pilon.length - 1]
+      : null;
+    if (topCard && game.turn) {
+      const teamId = game.playerTeam[game.turn.playerId];
+      const team   = teamId ? game.teams[teamId] : null;
+      if (team?.table.canastas.some((c) => c.rank === topCard.rank && c.closed)) {
+        return 0; // free take — team has a closed canasta of this rank
+      }
+    }
+    return game.round.pilonState === 'TRIADO' ? 3 : 2;
   },
 
   getStockCount() {

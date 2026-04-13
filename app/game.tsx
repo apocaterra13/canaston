@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 
 import { useGameStore } from '../src/store/gameStore';
 import type { Card, Canasta, Meld, Team } from '../engine/types';
+import { isMono } from '../engine/deck';
 import CardView from '../src/components/CardView';
 import HandView, { HandViewRef } from '../src/components/HandView';
 import MeldView from '../src/components/MeldView';
@@ -59,7 +60,7 @@ export default function GameScreen() {
   const [bajadaPending, setBajadaPending]       = useState(false);
   const handRef = useRef<HandViewRef>(null);
 
-  const { game, handVisible, passDeviceVisible, lastError } = store;
+  const { game, handVisible, passDeviceVisible, lastError, pendingHonors } = store;
 
   // ---------------------------------------------------------------------------
   // Guard: if no game, go home
@@ -226,6 +227,51 @@ export default function GameScreen() {
   // Render helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * Returns true if any card in `cards` could legally be added to `meld`.
+   * This is a lightweight visual check — the engine validates properly on submit.
+   *
+   * Open meld rules (visual):
+   *   - A wildcard (2 or Joker) counts, provided the meld doesn't already have 2 wilds.
+   *   - A natural card of the same rank always counts.
+   *
+   * Mono meld (rank "2" or "JOKER"):
+   *   - Only wildcards accepted.
+   */
+  function openMeldCanAccept(meld: Meld, cards: Card[]): boolean {
+    if (cards.length === 0) return false;
+    const isMonoMeld = meld.rank === '2' || meld.rank === 'JOKER';
+    if (isMonoMeld) {
+      return cards.some((c) => isMono(c));
+    }
+    const existingWilds = meld.cards.filter((c) => isMono(c)).length;
+    const monoObligado = currentTeam?.monoObligado ?? false;
+    return cards.some((c) => {
+      // When mono obligado is active, wildcards may only be directed to the mono meld.
+      if (isMono(c)) return !monoObligado && existingWilds < 2;
+      return c.rank === meld.rank;
+    });
+  }
+
+  /**
+   * Returns true if any card in `cards` could be burned into a closed `canasta`.
+   *
+   * Mono closed canasta (rank "2" or "JOKER"):
+   *   - Any wildcard (2 or Joker) accepted.
+   *
+   * Normal closed canasta:
+   *   - Only a natural card of the exact same rank (no wilds).
+   */
+  function closedCanastaCanAccept(canasta: Canasta, cards: Card[]): boolean {
+    if (cards.length === 0) return false;
+    const isMonoCanasta = canasta.rank === '2' || canasta.rank === 'JOKER';
+    if (isMonoCanasta) {
+      return cards.some((c) => isMono(c));
+    }
+    // Normal closed: only same-rank naturals (no wilds)
+    return cards.some((c) => !isMono(c) && c.rank === canasta.rank);
+  }
+
   function renderTeamTable(team: Team, label: string, color: string, isCurrentTeam = false) {
     const table = team.table;
     const isEmpty = table.melds.length === 0 && table.canastas.length === 0 && table.honors.length === 0;
@@ -263,21 +309,21 @@ export default function GameScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.tableItems}
           >
-            {table.melds.map((meld) => (
-              <MeldView
-                key={meld.id}
-                meld={meld}
-                onPress={canInteract ? handleAddToMeld : undefined}
-                highlighted={selectedCards.length > 0 && canInteract}
-              />
-            ))}
             {table.canastas.map((canasta) => (
               <CanastaView
                 key={canasta.id}
                 canasta={canasta}
                 // Closed canastas accept burns; open canastas cannot be tapped
                 onPress={canInteract && canasta.closed ? handleAddToCanasta : undefined}
-                highlighted={selectedCards.length > 0 && canInteract && canasta.closed}
+                highlighted={canInteract && canasta.closed && closedCanastaCanAccept(canasta, selectedCards)}
+              />
+            ))}
+            {table.melds.map((meld) => (
+              <MeldView
+                key={meld.id}
+                meld={meld}
+                onPress={canInteract ? handleAddToMeld : undefined}
+                highlighted={canInteract && openMeldCanAccept(meld, selectedCards)}
               />
             ))}
           </ScrollView>
@@ -331,6 +377,13 @@ export default function GameScreen() {
           </TouchableOpacity>
         </SafeAreaView>
       </Modal>
+
+      {/* ── Honor Modal (red 3 drawn from stock or pilon) ────────────── */}
+      <HonorModal
+        visible={pendingHonors.length > 0}
+        honors={pendingHonors}
+        onConfirm={() => store.acknowledgePendingHonors()}
+      />
 
       {/* ── Take Pilon Modal ──────────────────────────────────────────── */}
       {pilonTop && (
@@ -491,7 +544,7 @@ export default function GameScreen() {
                 onPress={handleDrawFromStock}
               />
               <ActionBtn
-                label={pilonState === 'TRIADO' ? `Tomar pilón\n(3 iguales)` : 'Tomar pilón'}
+                label={matchesNeeded === 0 ? `Tomar pilón\n(gratis 🔥)` : pilonState === 'TRIADO' ? `Tomar pilón\n(3 iguales)` : 'Tomar pilón'}
                 icon="🃏"
                 color="#2980b9"
                 disabled={!canTakePilon}
@@ -554,6 +607,96 @@ export default function GameScreen() {
 }
 
 // ---------------------------------------------------------------------------
+// Honor Modal — shown when the player draws a red 3 (honor) from the stock
+// or receives one via the pilon. They must lay it on the table and receive
+// a replacement card before continuing their turn.
+// ---------------------------------------------------------------------------
+
+function HonorModal({
+  visible,
+  honors,
+  onConfirm,
+}: {
+  visible: boolean;
+  honors: Card[];
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent>
+      <View style={honorModalStyles.overlay}>
+        <View style={honorModalStyles.sheet}>
+          <Text style={honorModalStyles.title}>🏅 Tres Rojo</Text>
+          <Text style={honorModalStyles.body}>
+            {honors.length === 1
+              ? 'Sacaste un 3 rojo. Debes colocarlo en la mesa y recibirás una carta del mazo en su lugar.'
+              : `Sacaste ${honors.length} treses rojos. Se colocarán en la mesa y recibirás una carta de reemplazo por cada uno.`}
+          </Text>
+          <View style={honorModalStyles.cardRow}>
+            {honors.map((c) => (
+              <CardView key={c.id} card={c} size="lg" />
+            ))}
+          </View>
+          <TouchableOpacity style={honorModalStyles.btn} onPress={onConfirm}>
+            <Text style={honorModalStyles.btnText}>Colocar en mesa ✓</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const honorModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  sheet: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 360,
+    borderWidth: 2,
+    borderColor: '#e74c3c',
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#e74c3c',
+    marginBottom: 12,
+  },
+  body: {
+    fontSize: 14,
+    color: '#ecf0f1',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  btn: {
+    backgroundColor: '#e74c3c',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  btnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Take Pilon Modal
 // ---------------------------------------------------------------------------
 
@@ -593,12 +736,15 @@ function TakePilonModal({
     ...stagingGroup.map((c) => c.id),
   ]);
 
+  // Free-take: team has a closed canasta of the pilon top's rank.
+  const isFree = matchesNeeded === 0;
+
   // Cards eligible for matching the pilon top.
   // For TRIADO (top card is a wildcard), the player must match with the exact
   // same wildcard rank — so we include wildcards of that rank.
   // For normal pilon, only natural cards of that rank qualify (no wilds).
   const isTriado = pilonState === 'TRIADO';
-  const matchableCards = playerHand.filter((c) => {
+  const matchableCards = isFree ? [] : playerHand.filter((c) => {
     if (c.rank !== pilonTop.rank) return false;
     if (isTriado) return true; // any card of that wildcard rank (joker/pato)
     return c.category !== 'JOKER' && c.category !== 'PATO'; // naturals only
@@ -612,7 +758,7 @@ function TakePilonModal({
   // The match cards are the "entry fee" to take the pilon and don't count.
   const additionalPts = additionalGroups.flat().reduce((s, c) => s + c.points, 0);
 
-  const matchOk = selected.length === matchesNeeded;
+  const matchOk = isFree || selected.length === matchesNeeded;
   const bajadaOk = hasBajado || additionalPts >= bajadaMin;
   const canConfirm = matchOk && bajadaOk;
 
@@ -640,7 +786,9 @@ function TakePilonModal({
           <View style={modalStyles.sheet}>
             <Text style={modalStyles.title}>Tomar el Pilón</Text>
             <Text style={modalStyles.subtitle}>
-              {pilonState === 'TRIADO'
+              {isFree
+                ? `Tu equipo tiene una canasta cerrada de ${pilonTop.rank}. Puedes tomar el pilón sin cartas de la mano — la carta encima se quema automáticamente.`
+                : pilonState === 'TRIADO'
                 ? `El pilón tiene un comodín encima. Necesitas ${matchesNeeded} cartas del mismo rango.`
                 : `Selecciona ${matchesNeeded} cartas de rango ${pilonTop.rank} de tu mano.`}
             </Text>
@@ -651,8 +799,8 @@ function TakePilonModal({
               <CardView card={pilonTop} size="md" />
             </View>
 
-            {/* Match cards */}
-            {matchableCards.length === 0 ? (
+            {/* Match cards — hidden on free take */}
+            {!isFree && (matchableCards.length === 0 ? (
               <Text style={modalStyles.noCardsText}>
                 No tienes cartas de rango {pilonTop.rank} para tomar el pilón.
               </Text>
@@ -681,7 +829,7 @@ function TakePilonModal({
                   ))}
                 </ScrollView>
               </>
-            )}
+            ))}
 
             {/* ── Bajada section — only shown when team hasn't bajado yet ── */}
             {!hasBajado && (

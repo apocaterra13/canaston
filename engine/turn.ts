@@ -204,7 +204,7 @@ export function takePilon(
    * Ignored (and may be empty) when the team already has bajado.
    */
   additionalMeldGroups: string[][] = [],
-): ActionResult<{ pilonCards: Card[]; autoMeld: Meld; additionalMelds: Meld[] }> {
+): ActionResult<{ pilonCards: Card[]; autoMeld: Meld | null; additionalMelds: Meld[] }> {
   const stateCheck = requireState(game, "TURNO_NORMAL");
   if (!stateCheck.ok) return stateCheck;
 
@@ -228,36 +228,49 @@ export function takePilon(
 
   const topCard = round.pilon[round.pilon.length - 1];
 
-  // Triado check (section 8.2)
-  const requiredCount = round.pilonState === "TRIADO" ? 3 : 2;
+  const player   = game.players[playerId];
+  const { team } = getTeamForPlayer(game, playerId);
+
+  // Free-take check (section 8.4):
+  // If the taking team already has a *closed* canasta of the same rank as the
+  // pilon top card, they may take the pile with ZERO match cards — the top
+  // card is burned into that closed canasta automatically.
+  const freeCanasta = team.table.canastas.find(
+    (c) => c.rank === (topCard.rank as Rank) && c.closed,
+  );
+  const isFree = freeCanasta !== undefined;
+
+  // Triado check (section 8.2) — not applicable on a free take.
+  const requiredCount = isFree ? 0 : round.pilonState === "TRIADO" ? 3 : 2;
 
   if (matchCardIds.length !== requiredCount) {
     return err(
       "PILON_WRONG_MATCH_COUNT",
-      `Pilon is ${round.pilonState === "TRIADO" ? "triado (need 3)" : "normal (need 2)"}. ` +
-        `Provided ${matchCardIds.length} cards.`,
+      isFree
+        ? `Your team has a closed canasta of rank ${topCard.rank}. No match cards needed (got ${matchCardIds.length}).`
+        : `Pilon is ${round.pilonState === "TRIADO" ? "triado (need 3)" : "normal (need 2)"}. ` +
+          `Provided ${matchCardIds.length} cards.`,
       { required: requiredCount, provided: matchCardIds.length },
     );
   }
 
-  // Validate match cards are in hand
-  const handCheck = requireCardsInHand(game, playerId, matchCardIds);
-  if (!handCheck.ok) return handCheck;
+  // Validate match cards are in hand (skipped when free take, since none are required)
+  let matchCards: Card[] = [];
+  if (!isFree) {
+    const handCheck = requireCardsInHand(game, playerId, matchCardIds);
+    if (!handCheck.ok) return handCheck;
+    matchCards = handCheck.data;
 
-  const matchCards = handCheck.data;
-
-  // All match cards must equal the top card's rank
-  for (const mc of matchCards) {
-    if (mc.rank !== topCard.rank) {
-      return err(
-        "PILON_RANK_MISMATCH",
-        `Match card ${mc.id} has rank ${mc.rank} but pilon top is rank ${topCard.rank}.`,
-      );
+    // All match cards must equal the top card's rank
+    for (const mc of matchCards) {
+      if (mc.rank !== topCard.rank) {
+        return err(
+          "PILON_RANK_MISMATCH",
+          `Match card ${mc.id} has rank ${mc.rank} but pilon top is rank ${topCard.rank}.`,
+        );
+      }
     }
   }
-
-  const player   = game.players[playerId];
-  const { team } = getTeamForPlayer(game, playerId);
 
   // ---------------------------------------------------------------------------
   // Bajada validation (section 9.1) — only when team has not yet bajado.
@@ -346,7 +359,7 @@ export function takePilon(
   // All validation passed — execute the action.
   // ---------------------------------------------------------------------------
 
-  // Separate top card (anchors the mandatory meld) from the rest of the pile.
+  // Separate top card (anchors the mandatory meld / burn) from the rest of the pile.
   const pilonRest = round.pilon.slice(0, -1);
 
   // Clear the pilon.
@@ -354,30 +367,35 @@ export function takePilon(
   round.pilonState = "EMPTY";
   round.tapaActive = false;
 
-  // Remove match cards from hand — they go into the mandatory meld.
-  removeCardsFromHandMutate(player, matchCardIds);
-
-  // Create or extend the mandatory auto-meld: matchCards + topCard.
-  // If the team already has an open meld of this rank, merge into it instead
-  // of creating a duplicate.
-  const autoMeldRank = topCard.rank as Rank;
-  const existingMeld = team.table.melds.find((m) => m.rank === autoMeldRank);
-  let autoMeld: Meld;
-  if (existingMeld) {
-    existingMeld.cards.push(...matchCards, topCard);
-    autoMeld = existingMeld;
-  } else {
-    autoMeld = {
-      id:    newMeldId(),
-      rank:  autoMeldRank,
-      cards: [...matchCards, topCard],
-    };
-    team.table.melds.push(autoMeld);
-  }
-
   // Add the rest of the pilon to the player's hand.
   player.hand.push(...pilonRest);
   player.hand = sortHand(player.hand);
+
+  let autoMeld: Meld | null = null;
+
+  if (isFree && freeCanasta) {
+    // Free take: burn the top card into the closed canasta — no match cards needed.
+    freeCanasta.burned.push(topCard);
+  } else {
+    // Normal take: remove match cards from hand, create or extend the mandatory meld.
+    removeCardsFromHandMutate(player, matchCardIds);
+
+    // If the team already has an open meld of this rank, merge into it instead
+    // of creating a duplicate.
+    const autoMeldRank = topCard.rank as Rank;
+    const existingMeld = team.table.melds.find((m) => m.rank === autoMeldRank);
+    if (existingMeld) {
+      existingMeld.cards.push(...matchCards, topCard);
+      autoMeld = existingMeld;
+    } else {
+      autoMeld = {
+        id:    newMeldId(),
+        rank:  autoMeldRank,
+        cards: [...matchCards, topCard],
+      };
+      team.table.melds.push(autoMeld);
+    }
+  }
 
   // Build additional melds (only when team hasn't bajado yet).
   const additionalMelds: Meld[] = [];
@@ -408,7 +426,8 @@ export function takePilon(
 
   // Track all new meld IDs in bajadaMeldIds for commitBajada / addToMeld access.
   const ctx = game.turn!;
-  ctx.bajadaMeldIds.push(autoMeld.id, ...additionalMelds.map((m) => m.id));
+  if (autoMeld) ctx.bajadaMeldIds.push(autoMeld.id);
+  ctx.bajadaMeldIds.push(...additionalMelds.map((m) => m.id));
 
   // Update turn context.
   ctx.tookPilon       = true;
@@ -487,6 +506,17 @@ export function layMeld(
 
   // Bajada logic (section 9.1)
   const isBajada = !team.hasBajado;
+
+  // A player must always have at least one card left to discard — cannot empty hand by melding.
+  const handAfterMeld = game.players[playerId].hand.filter(
+    (c) => !new Set(opts.cardIds).has(c.id),
+  );
+  if (handAfterMeld.length === 0) {
+    return err(
+      "MUST_KEEP_DISCARD_CARD",
+      "You must keep at least one card to discard. You cannot empty your hand by playing melds.",
+    );
+  }
 
   // Remove cards from hand
   removeCardsFromHandMutate(game.players[playerId], opts.cardIds);
@@ -605,6 +635,17 @@ export function addToMeld(
     }
   }
 
+  // A player must always have at least one card left to discard.
+  const handAfterAdd = game.players[playerId].hand.filter(
+    (c) => !new Set(cardIds).has(c.id),
+  );
+  if (handAfterAdd.length === 0) {
+    return err(
+      "MUST_KEEP_DISCARD_CARD",
+      "You must keep at least one card to discard. You cannot empty your hand by playing cards.",
+    );
+  }
+
   removeCardsFromHandMutate(game.players[playerId], cardIds);
   meld.cards.push(...newCards);
 
@@ -689,6 +730,17 @@ export function addToCanasta(
     if (addingWilds > 0 && canasta.rank !== "2" && canasta.rank !== "JOKER") {
       return err("MONO_OBLIGADO", "Cannot add wilds while mono obligado is active.");
     }
+  }
+
+  // A player must always have at least one card left to discard.
+  const handAfterCanasta = game.players[playerId].hand.filter(
+    (c) => !new Set(cardIds).has(c.id),
+  );
+  if (handAfterCanasta.length === 0) {
+    return err(
+      "MUST_KEEP_DISCARD_CARD",
+      "You must keep at least one card to discard. You cannot empty your hand by playing cards.",
+    );
   }
 
   removeCardsFromHandMutate(game.players[playerId], cardIds);
@@ -776,14 +828,17 @@ export function discard(
   removeCardsFromHandMutate(player, [cardId]);
   round.pilon.push(card);
 
-  // Update pilon state (section 8)
+  // Update pilon state (section 8).
+  // Triado is sticky: once the pilon is triado it stays triado even if a
+  // natural card is discarded on top. Only a tapa can override it (blocking
+  // the pile entirely), and a new mono discard keeps it triado.
   if (isMono(card)) {
     round.pilonState = "TRIADO";
     round.tapaActive = false;
   } else if (isTapa(card)) {
     round.pilonState = "TAPA";
     round.tapaActive = true;
-  } else {
+  } else if (round.pilonState !== "TRIADO") {
     round.pilonState = "NORMAL";
     round.tapaActive = false;
   }

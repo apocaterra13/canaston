@@ -5,7 +5,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { Canasta } from '../../engine/types';
-import { canastaBaseScore, sumCardPoints } from '../../engine';
+import { canastaBaseScore } from '../../engine';
 
 interface CanastaViewProps {
   canasta: Canasta;
@@ -14,18 +14,69 @@ interface CanastaViewProps {
 }
 
 const TYPE_CONFIG = {
-  LIMPIA: { label: 'LIMPIA', color: '#27ae60', bg: 'rgba(39,174,96,0.15)', icon: '★' },
-  SUCIA:  { label: 'SUCIA',  color: '#f39c12', bg: 'rgba(243,156,18,0.15)', icon: '◈' },
-  MONO:   { label: 'MONOS',  color: '#8e44ad', bg: 'rgba(142,68,173,0.15)', icon: '🃏' },
+  LIMPIA: { color: '#e74c3c', bg: 'rgba(231,76,60,0.15)', textColor: '#fff' },
+  SUCIA:  { color: '#2c3e50', bg: 'rgba(44,62,80,0.35)',  textColor: '#fff' },
 };
 
+/**
+ * For a closed canasta, returns the symbol(s) to display in the rank area.
+ *
+ * Normal canastas:
+ *   LIMPIA → rank + ♥ (red)
+ *   SUCIA  → rank + ♣ (dark)
+ *
+ * Mono canastas (three sub-cases):
+ *   Patos limpia  — all 2s (no jokers)  → "2" + ♥ (red)
+ *   Jokers limpia — 6 jokers + 1 pato   → 🃏 (joker emoji only)
+ *   Monos sucia   — any other mix        → "2" + ♣ (dark)
+ */
+/** Mono canastas resolve to LIMPIA or SUCIA for display purposes. */
+function monoDisplayType(canasta: Canasta): 'LIMPIA' | 'SUCIA' {
+  const jokerCount = canasta.cards.filter((c) => c.category === 'JOKER').length;
+  const patoCount  = canasta.cards.filter((c) => c.category === 'PATO').length;
+  // Patos limpia (all 2s) or jokers limpia (6 jokers + 1 pato)
+  if (patoCount === canasta.cards.length) return 'LIMPIA';
+  if (jokerCount === 6 && patoCount === 1) return 'LIMPIA';
+  return 'SUCIA';
+}
+
+function getDisplayType(canasta: Canasta): 'LIMPIA' | 'SUCIA' {
+  if (canasta.type === 'MONO') return monoDisplayType(canasta);
+  return canasta.type as 'LIMPIA' | 'SUCIA';
+}
+
+function getRankDisplay(canasta: Canasta, displayType: 'LIMPIA' | 'SUCIA'): {
+  rank: string;
+  suit: string;
+  suitColor: string;
+} {
+  if (canasta.type === 'MONO') {
+    const jokerCount = canasta.cards.filter((c) => c.category === 'JOKER').length;
+    const patoCount  = canasta.cards.filter((c) => c.category === 'PATO').length;
+
+    if (patoCount === canasta.cards.length) {
+      return { rank: '2', suit: '♥', suitColor: '#e74c3c' };
+    }
+    if (jokerCount === 6 && patoCount === 1) {
+      return { rank: '🃏', suit: '', suitColor: '#fff' };
+    }
+    return { rank: '2', suit: '♣', suitColor: '#fff' };
+  }
+
+  if (displayType === 'LIMPIA') {
+    return { rank: canasta.rank, suit: '♥', suitColor: '#e74c3c' };
+  }
+  return { rank: canasta.rank, suit: '♣', suitColor: '#fff' };
+}
+
 export default function CanastaView({ canasta, onPress, highlighted = false }: CanastaViewProps) {
-  const cfg = TYPE_CONFIG[canasta.type as keyof typeof TYPE_CONFIG] ?? TYPE_CONFIG['LIMPIA'];
-  const isClean = canasta.type === 'LIMPIA';
-  const baseScore = canastaBaseScore(canasta.rank, isClean);
-  const cardPts   = sumCardPoints(canasta.cards) + sumCardPoints(canasta.burned);
-  const total     = baseScore + cardPts;
-  const burnCount = canasta.burned.length;
+  const displayType = getDisplayType(canasta);
+  const cfg         = TYPE_CONFIG[displayType];
+  const isClean     = canasta.type === 'LIMPIA';
+  const total       = canastaBaseScore(canasta.rank, isClean);
+  const burnCount   = canasta.burned.length;
+  const display     = getRankDisplay(canasta, displayType);
+  const badgeLabel  = displayType === 'LIMPIA' ? 'LIMPIA' : 'SUCIA';
 
   const content = (
     <View
@@ -37,15 +88,20 @@ export default function CanastaView({ canasta, onPress, highlighted = false }: C
     >
       {/* Type badge */}
       <View style={[styles.typeBadge, { backgroundColor: cfg.color }]}>
-        <Text style={styles.typeText}>{cfg.icon} {cfg.label}</Text>
+        <Text style={styles.typeText}>{badgeLabel}</Text>
       </View>
 
-      {/* Rank */}
-      <Text style={[styles.rank, { color: cfg.color }]}>{canasta.rank}</Text>
+      {/* Rank + suit symbol */}
+      <View style={styles.rankRow}>
+        <Text style={[styles.rank, { color: cfg.textColor }]}>{display.rank}</Text>
+        {display.suit !== '' && (
+          <Text style={[styles.suit, { color: display.suitColor }]}>{display.suit}</Text>
+        )}
+      </View>
 
       {/* Closed/open indicator */}
       <Text style={styles.status}>
-        {canasta.closed ? '🔒 Cerrada' : `${canasta.cards.length}/7`}
+        {canasta.closed ? '🔒' : `${canasta.cards.length}/7`}
       </Text>
 
       {/* Points */}
@@ -72,10 +128,11 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 10,
     borderWidth: 1.5,
-    padding: 8,
-    width: 88,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    width: 72,
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
   },
   highlighted: {
     borderWidth: 3,
@@ -95,8 +152,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  rankRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 1,
+  },
   rank: {
     fontSize: 20,
+    fontWeight: 'bold',
+    lineHeight: 24,
+  },
+  suit: {
+    fontSize: 16,
     fontWeight: 'bold',
     lineHeight: 24,
   },

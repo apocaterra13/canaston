@@ -219,7 +219,7 @@ export function validateAddToMeld(
 // ---------------------------------------------------------------------------
 
 export function isCanastaCloseable(cards: Card[]): boolean {
-  return cards.length === 7;
+  return cards.length >= 7;
 }
 
 export function countMono(cards: Card[]): number {

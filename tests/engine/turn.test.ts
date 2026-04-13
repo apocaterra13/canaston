@@ -155,11 +155,12 @@ describe('takePilon — mandatory meld created and cards routed correctly', () =
     if (!result.ok) return;
 
     const meld = result.data.autoMeld;
-    expect(meld.rank).toBe('7');
-    expect(meld.cards).toContain(topCard);
-    expect(meld.cards).toContain(match1);
-    expect(meld.cards).toContain(match2);
-    expect(meld.cards).toHaveLength(3);
+    expect(meld).not.toBeNull();
+    expect(meld!.rank).toBe('7');
+    expect(meld!.cards).toContain(topCard);
+    expect(meld!.cards).toContain(match1);
+    expect(meld!.cards).toContain(match2);
+    expect(meld!.cards).toHaveLength(3);
   });
 
   it('meld is placed on the team table', () => {
@@ -289,7 +290,8 @@ describe('takePilon — triado state', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       // topCard goes into the auto-meld, not the hand
-      expect(result.data.autoMeld.cards).toContain(topCard);
+      expect(result.data.autoMeld).not.toBeNull();
+      expect(result.data.autoMeld!.cards).toContain(topCard);
       expect(game.players['p1'].hand).not.toContain(topCard);
     }
   });
@@ -420,8 +422,9 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
   }
 
   it('commitBajada sets team.hasBajado to true', () => {
-    const aces = trio('A', 'a');
-    const game = makeDrawnGame({ hand: aces });
+    const aces  = trio('A', 'a');
+    const extra = makeCard('extra_disc', '7', 'hearts', 5); // kept as discard
+    const game  = makeDrawnGame({ hand: [...aces, extra] });
     layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
     const result = commitBajada(game, 'p1');
     expect(result.ok).toBe(true);
@@ -429,16 +432,18 @@ describe('bajada — team-level flag, only one member must meet the minimum', ()
   });
 
   it('after p1 bajadas, p3 (partner) can lay melds without any point check', () => {
-    // p1 bajadas first
-    const acesP1 = trio('A', 'ap1');
-    const gameP1 = makeDrawnGame({ hand: acesP1 });
+    // p1 bajadas first — needs an extra card to discard (cannot empty hand by melding)
+    const acesP1  = trio('A', 'ap1');
+    const extraP1 = makeCard('p1_disc', '7', 'hearts', 5);
+    const gameP1  = makeDrawnGame({ hand: [...acesP1, extraP1] });
     layMeld(gameP1, 'p1', { cardIds: acesP1.map(c => c.id) });
     commitBajada(gameP1, 'p1');
 
     // Now simulate p3's turn on the same shared game object.
     // p3 is also TEAM_NS — hasBajado should already be true.
-    const kingsP3 = trio('K', 'kp3');
-    gameP1.players['p3'].hand = kingsP3;
+    const kingsP3  = trio('K', 'kp3');
+    const extraP3  = makeCard('p3_disc', '8', 'hearts', 5);
+    gameP1.players['p3'].hand = [...kingsP3, extraP3];
     gameP1.round!.currentTurnIndex = 2; // p3 is at index 2
     gameP1.turn = {
       playerId: 'p3',
@@ -545,9 +550,11 @@ describe('bajada deadlock — extending a pending bajada meld before commitBajad
 
   it('allows adding cards to a pending bajada meld (NO_BAJADA no longer blocks)', () => {
     // Lay a meld worth 15 pts — below the 50-pt minimum
+    // Need an extra discard card so the player doesn't empty their hand by adding to the meld
     const fives = trio('5', 'f', 5);
     const extra = single('5', 'f_extra', 5);
-    const game  = makeDrawnGame({ hand: [...fives, extra] });
+    const disc  = single('7', 'f_disc', 5); // kept as discard
+    const game  = makeDrawnGame({ hand: [...fives, extra, disc] });
 
     const layResult = layMeld(game, 'p1', { cardIds: fives.map(c => c.id) });
     expect(layResult.ok).toBe(true);
@@ -848,7 +855,8 @@ describe('quemar — burning cards into a closed canasta', () => {
 
   it('burning natural cards of same rank into a closed canasta succeeds', () => {
     const burnCard = makeCard('burn_A', 'A', 'spades', 20);
-    const game = makeDrawnGame({ hand: [burnCard], hasBajado: true });
+    const disc     = makeCard('burn_disc', '7', 'hearts', 5); // kept as discard
+    const game = makeDrawnGame({ hand: [burnCard, disc], hasBajado: true });
 
     game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
 
@@ -879,3 +887,166 @@ function store_addToCanasta(game: GameStateData, card: Card) {
   const canastaId = game.teams['TEAM_NS'].table.canastas[0].id;
   return addToCanasta(game, 'p1', canastaId, [card.id]);
 }
+
+// ---------------------------------------------------------------------------
+// takePilon — free take (opposing team has closed canasta of pilon top rank)
+// ---------------------------------------------------------------------------
+
+describe('takePilon — free take when team has closed canasta of top card rank', () => {
+  function makeClosedCanasta(rank: Card['rank'], id: string): import('../../engine/types').Canasta {
+    const cards = Array.from({ length: 7 }, (_, i): Card => ({
+      id: `${id}_card${i}`, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0,
+    }));
+    return { id, rank, cards, type: 'LIMPIA', closed: true, burned: [] };
+  }
+
+  it('succeeds with 0 match cards when team has a closed canasta of the same rank', () => {
+    const topCard = makeCard('top_7', '7', 'hearts', 10);
+    const below   = makeCard('below_K', 'K', 'hearts', 10);
+    const game = makeGame({
+      pilon: [below, topCard],
+      pilonState: 'NORMAL',
+      hand: [], // no match cards in hand — should be fine
+      hasBajado: true,
+    });
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('7', 'cana_7'));
+
+    const result = takePilon(game, 'p1', []);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // autoMeld is null — no new meld created
+      expect(result.data.autoMeld).toBeNull();
+      // Rest of pile went to hand
+      expect(result.data.pilonCards).toHaveLength(1);
+      expect(result.data.pilonCards[0].id).toBe('below_K');
+    }
+  });
+
+  it('top card is burned into the closed canasta burned array', () => {
+    const topCard = makeCard('top_7', '7', 'hearts', 10);
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [],
+      hasBajado: true,
+    });
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('7', 'cana_7'));
+
+    takePilon(game, 'p1', []);
+    const canasta = game.teams['TEAM_NS'].table.canastas[0];
+    expect(canasta.burned).toHaveLength(1);
+    expect(canasta.burned[0].id).toBe('top_7');
+  });
+
+  it('rejects if 0 match cards provided but team has NO closed canasta of that rank', () => {
+    const topCard = makeCard('top_7', '7', 'hearts', 10);
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [],
+      hasBajado: true,
+    });
+
+    const result = takePilon(game, 'p1', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_WRONG_MATCH_COUNT');
+  });
+
+  it('rejects if match cards are provided on a free-take (overcounting)', () => {
+    const topCard = makeCard('top_7', '7', 'hearts', 10);
+    const extra   = makeCard('extra_7', '7', 'diamonds', 10);
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [extra],
+      hasBajado: true,
+    });
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('7', 'cana_7'));
+
+    // Providing 1 card when 0 are required should fail
+    const result = takePilon(game, 'p1', [extra.id]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_WRONG_MATCH_COUNT');
+  });
+
+  it('pilon is cleared after a free take', () => {
+    const topCard = makeCard('top_K', 'K', 'hearts', 10);
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [],
+      hasBajado: true,
+    });
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('K', 'cana_K'));
+
+    takePilon(game, 'p1', []);
+    expect(game.round!.pilon).toHaveLength(0);
+    expect(game.round!.pilonState).toBe('EMPTY');
+  });
+
+  it('turn phase transitions to TOOK_PILON on free take', () => {
+    const topCard = makeCard('top_A', 'A', 'hearts', 10);
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [],
+      hasBajado: true,
+    });
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
+
+    takePilon(game, 'p1', []);
+    expect(game.turn!.phase).toBe('TOOK_PILON');
+    expect(game.turn!.tookPilon).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Must-keep-discard-card rule — player cannot empty hand by melding
+// ---------------------------------------------------------------------------
+
+describe('must keep at least one card to discard', () => {
+  it('layMeld rejects if playing all cards would leave hand empty', () => {
+    // 3 Qs + 2 6s + 1 wildcard = 6 cards, both melds would empty hand
+    const q1 = makeCard('q1', 'Q', 'hearts', 10);
+    const q2 = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3 = makeCard('q3', 'Q', 'clubs', 10);
+
+    const game = makeDrawnGame({ hand: [q1, q2, q3], hasBajado: true });
+
+    // Attempting to play the only 3 cards — would leave hand empty, must fail
+    const result = layMeld(game, 'p1', { cardIds: [q1.id, q2.id, q3.id] });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('MUST_KEEP_DISCARD_CARD');
+  });
+
+  it('layMeld succeeds when at least one card remains after playing', () => {
+    const q1    = makeCard('q1', 'Q', 'hearts', 10);
+    const q2    = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3    = makeCard('q3', 'Q', 'clubs', 10);
+    const extra = makeCard('extra_7', '7', 'hearts', 5);
+
+    const game = makeDrawnGame({ hand: [q1, q2, q3, extra], hasBajado: true });
+
+    const result = layMeld(game, 'p1', { cardIds: [q1.id, q2.id, q3.id] });
+    expect(result.ok).toBe(true);
+    expect(game.players['p1'].hand).toHaveLength(1);
+    expect(game.players['p1'].hand[0].id).toBe(extra.id);
+  });
+
+  it('addToMeld rejects if adding all cards would leave hand empty', () => {
+    const q1 = makeCard('q1', 'Q', 'hearts', 10);
+    const q2 = makeCard('q2', 'Q', 'diamonds', 10);
+    const q3 = makeCard('q3', 'Q', 'clubs', 10);
+    const q4 = makeCard('q4', 'Q', 'spades', 10);
+
+    const game = makeDrawnGame({ hand: [q4], hasBajado: true });
+    // Place an existing meld on the team table
+    game.teams['TEAM_NS'].table.melds.push({ id: 'meld_Q', rank: 'Q', cards: [q1, q2, q3] });
+
+    const result = addToMeld(game, 'p1', 'meld_Q', [q4.id]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('MUST_KEEP_DISCARD_CARD');
+  });
+});

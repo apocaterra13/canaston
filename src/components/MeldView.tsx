@@ -25,7 +25,10 @@ function rankColor(rank: string): string {
 }
 
 export default function MeldView({ meld, onPress, highlighted = false }: MeldViewProps) {
-  const wildCount    = meld.cards.filter((c) => c.category === 'JOKER' || c.category === 'PATO').length;
+  const isMonoMeld   = meld.rank === '2' || meld.rank === 'JOKER';
+  const jokerCount   = meld.cards.filter((c) => c.category === 'JOKER').length;
+  const patoCount    = meld.cards.filter((c) => c.category === 'PATO').length;
+  const wildCount    = jokerCount + patoCount;
   const naturalCount = meld.cards.length - wildCount;
   const color        = rankColor(meld.rank);
 
@@ -35,17 +38,37 @@ export default function MeldView({ meld, onPress, highlighted = false }: MeldVie
     <View style={[styles.container, highlighted && styles.highlighted]}>
       {/* Rank badge */}
       <View style={[styles.rankBadge, { borderColor: color }]}>
-        <Text style={[styles.rankText, { color }]}>{meld.rank}</Text>
+        <Text style={[styles.rankText, { color }]}>{isMonoMeld ? 'Monos' : meld.rank}</Text>
       </View>
 
-      {/* Composition: natural count + wild count */}
+      {/* Composition */}
       <View style={styles.stats}>
-        <View style={styles.naturalPill}>
-          <View style={styles.cardIcon} />
-          <Text style={styles.naturalCount}>×{naturalCount}</Text>
-        </View>
-        {wildCount > 0 && (
-          <Text style={styles.wildBadge}>🃏×{wildCount}</Text>
+        {isMonoMeld ? (
+          // Mono meld: show 2s and Jokers separately
+          <>
+            {patoCount > 0 && (
+              <View style={styles.naturalPill}>
+                <View style={[styles.cardIcon, styles.patoIcon]}>
+                  <Text style={styles.patoIconText}>2</Text>
+                </View>
+                <Text style={styles.naturalCount}>×{patoCount}</Text>
+              </View>
+            )}
+            {jokerCount > 0 && (
+              <Text style={styles.wildBadge}>🃏×{jokerCount}</Text>
+            )}
+          </>
+        ) : (
+          // Normal meld: natural count + wild count
+          <>
+            <View style={styles.naturalPill}>
+              <View style={styles.cardIcon} />
+              <Text style={styles.naturalCount}>×{naturalCount}</Text>
+            </View>
+            {wildCount > 0 && (
+              <Text style={styles.wildBadge}>🃏×{wildCount}</Text>
+            )}
+          </>
         )}
       </View>
 
@@ -103,7 +126,7 @@ const styles = StyleSheet.create({
   },
   rankText: {
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 14,
   },
   stats: {
     flexDirection: 'row',
@@ -124,6 +147,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.25)',
+  },
+  patoIcon: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  patoIconText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#8e44ad',
+    lineHeight: 14,
   },
   naturalCount: {
     color: '#fff',
