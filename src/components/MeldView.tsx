@@ -132,6 +132,7 @@ const styles = StyleSheet.create({
   },
   wildBadge: {
     fontSize: 10,
+    color: '#fff',
   },
   progressRow: {
     flexDirection: 'row',
