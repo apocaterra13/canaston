@@ -362,8 +362,10 @@ export default function GameScreen() {
       {/* ── Table (scrollable) ───────────────────────────────────────── */}
       <ScrollView style={styles.tableArea} contentContainerStyle={styles.tableContent}>
 
-        {/* NS Team Table */}
-        {teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR)}
+        {/* Active team table first, opponent below */}
+        {currentTeamId === 'TEAM_EW'
+          ? teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR)
+          : teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR)}
 
         {/* Pilon + Stock */}
         <View style={styles.pilonStockRow}>
@@ -407,8 +409,10 @@ export default function GameScreen() {
           </View>
         </View>
 
-        {/* EW Team Table */}
-        {teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR)}
+        {/* Opponent team table */}
+        {currentTeamId === 'TEAM_EW'
+          ? teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR)
+          : teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR)}
 
         {/* Spacer for hand area */}
         <View style={{ height: 16 }} />
