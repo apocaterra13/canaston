@@ -641,8 +641,9 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_MINIMUM_NOT_MET');
   });
 
-  it('succeeds when auto-meld + additional melds meet the minimum', () => {
-    // auto-meld: topCard (20) + 2 match 7s (20 each) = 60 pts — meets 50-pt minimum on its own
+  it('fails when match cards have enough points but no additional melds are declared', () => {
+    // match cards (20 pts each) + topCard (20 pts) would be 60 pts total,
+    // but match cards do NOT count toward bajada — so additionalPts = 0 < 50.
     const topCard = makeCard('top_7h', '7', 'hearts', 20);
     const match1  = makeCard('m1_7d', '7', 'diamonds', 20);
     const match2  = makeCard('m2_7c', '7', 'clubs', 20);
@@ -653,13 +654,9 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
       hand: [match1, match2],
     });
 
-    // Total = 60 pts ≥ 50 — no additional melds needed
     const result = takePilon(game, 'p1', [match1.id, match2.id]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
-      expect(result.data.additionalMelds).toHaveLength(0);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_MINIMUM_NOT_MET');
   });
 
   it('succeeds when additional meld group bridges the gap to the minimum', () => {
@@ -731,19 +728,21 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_DUPLICATE_CARD');
   });
 
-  it('hasBajado is set after successful pilon take pre-bajada', () => {
-    const topCard = makeCard('top_7h', '7', 'hearts', 20);
-    const match1  = makeCard('m1_7d', '7', 'diamonds', 20);
-    const match2  = makeCard('m2_7c', '7', 'clubs', 20);
+  it('hasBajado is set after successful pilon take pre-bajada (with sufficient additional melds)', () => {
+    // Match cards don't count — need 3 aces (20 pts each = 60 pts) as additional meld
+    const topCard = makeCard('top_7h', '7', 'hearts', 5);
+    const match1  = makeCard('m1_7d', '7', 'diamonds', 5);
+    const match2  = makeCard('m2_7c', '7', 'clubs', 5);
+    const aces    = naturalCards('A', 'b', 3, 20); // 60 pts ≥ 50
 
     const game = makeGame({
       pilon: [topCard],
       pilonState: 'NORMAL',
-      hand: [match1, match2],
+      hand: [match1, match2, ...aces],
     });
 
     expect(game.teams['TEAM_NS'].hasBajado).toBe(false);
-    const result = takePilon(game, 'p1', [match1.id, match2.id]);
+    const result = takePilon(game, 'p1', [match1.id, match2.id], [aces.map(c => c.id)]);
     expect(result.ok).toBe(true);
     expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
   });

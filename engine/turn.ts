@@ -303,19 +303,19 @@ export function takePilon(
       validatedAdditional.push({ cards: groupCheck.data, rank: meldCheck.data.rank });
     }
 
-    // Check total points: auto-meld (matchCards + topCard) + additional melds.
-    const autoMeldPoints       = sumCardPoints([...matchCards, topCard]);
-    const additionalPoints     = validatedAdditional.reduce(
+    // Check points from additional melds only.
+    // The match cards (and topCard) are the "entry fee" to take the pilon —
+    // they do NOT count toward the bajada point minimum.
+    const additionalPoints = validatedAdditional.reduce(
       (sum, m) => sum + sumCardPoints(m.cards), 0,
     );
-    const total = autoMeldPoints + additionalPoints;
 
-    if (total < minimum) {
+    if (additionalPoints < minimum) {
       return err(
         "PILON_BAJADA_MINIMUM_NOT_MET",
-        `Taking the pilon requires at least ${minimum} points in melds ` +
-          `(auto-meld + declared melds = ${total} pts).`,
-        { total, minimum },
+        `Taking the pilon requires at least ${minimum} points in additional melds ` +
+          `(the match cards don't count). Declared additional melds = ${additionalPoints} pts.`,
+        { total: additionalPoints, minimum },
       );
     }
   }

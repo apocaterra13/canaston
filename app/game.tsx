@@ -582,13 +582,12 @@ function TakePilonModal({
   // that are already selected as match cards)
   const availableForMelds = playerHand.filter((c) => !claimedIds.has(c.id));
 
-  // Point totals
-  const autoMeldPts = selected.reduce((s, c) => s + c.points, 0) + pilonTop.points;
+  // Point totals — only additional melds count toward the bajada minimum.
+  // The match cards are the "entry fee" to take the pilon and don't count.
   const additionalPts = additionalGroups.flat().reduce((s, c) => s + c.points, 0);
-  const totalPts = autoMeldPts + additionalPts;
 
   const matchOk = selected.length >= matchesNeeded;
-  const bajadaOk = hasBajado || totalPts >= bajadaMin;
+  const bajadaOk = hasBajado || additionalPts >= bajadaMin;
   const canConfirm = matchOk && bajadaOk;
 
   function addStagingGroup() {
@@ -666,19 +665,16 @@ function TakePilonModal({
                   Bajada obligatoria — mín. {bajadaMin} pts
                 </Text>
 
-                {/* Point progress */}
+                {/* Point progress — match cards don't count, only additional melds */}
                 <View style={pilonModalStyles.progressRow}>
                   <Text style={pilonModalStyles.progressLabel}>
-                    Auto-meld: {autoMeldPts} pts
-                  </Text>
-                  <Text style={pilonModalStyles.progressLabel}>
-                    Adicionales: {additionalPts} pts
+                    Las cartas de la jugada NO suman puntos de bajada.
                   </Text>
                   <Text style={[
                     pilonModalStyles.progressTotal,
-                    totalPts >= bajadaMin ? pilonModalStyles.progressOk : pilonModalStyles.progressShort,
+                    additionalPts >= bajadaMin ? pilonModalStyles.progressOk : pilonModalStyles.progressShort,
                   ]}>
-                    Total: {totalPts} / {bajadaMin}
+                    Melds adicionales: {additionalPts} / {bajadaMin} pts
                   </Text>
                 </View>
 
