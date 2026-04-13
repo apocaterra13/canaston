@@ -593,10 +593,16 @@ function TakePilonModal({
     ...stagingGroup.map((c) => c.id),
   ]);
 
-  // Cards eligible for matching the pilon top
-  const matchableCards = playerHand.filter(
-    (c) => c.rank === pilonTop.rank && c.category !== 'JOKER' && c.category !== 'PATO',
-  );
+  // Cards eligible for matching the pilon top.
+  // For TRIADO (top card is a wildcard), the player must match with the exact
+  // same wildcard rank — so we include wildcards of that rank.
+  // For normal pilon, only natural cards of that rank qualify (no wilds).
+  const isTriado = pilonState === 'TRIADO';
+  const matchableCards = playerHand.filter((c) => {
+    if (c.rank !== pilonTop.rank) return false;
+    if (isTriado) return true; // any card of that wildcard rank (joker/pato)
+    return c.category !== 'JOKER' && c.category !== 'PATO'; // naturals only
+  });
 
   // Cards available for additional melds (everything not yet claimed, excluding match candidates
   // that are already selected as match cards)
@@ -606,7 +612,7 @@ function TakePilonModal({
   // The match cards are the "entry fee" to take the pilon and don't count.
   const additionalPts = additionalGroups.flat().reduce((s, c) => s + c.points, 0);
 
-  const matchOk = selected.length >= matchesNeeded;
+  const matchOk = selected.length === matchesNeeded;
   const bajadaOk = hasBajado || additionalPts >= bajadaMin;
   const canConfirm = matchOk && bajadaOk;
 
