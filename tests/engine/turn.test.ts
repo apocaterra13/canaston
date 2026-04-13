@@ -705,6 +705,46 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     if (!result.ok) expect(result.error.code).toBe('PILON_BAJADA_INVALID_MELD');
   });
 
+  it('rejects when an additional meld group has the same rank as the auto-meld (pilon top)', () => {
+    // Auto-meld will be Aces (pilon top = A). Additional group also Aces → duplicate rank.
+    const topCard  = makeCard('top_Ah', 'A', 'hearts', 20);
+    const match1   = makeCard('m1_Ad', 'A', 'diamonds', 20);
+    const match2   = makeCard('m2_Ac', 'A', 'clubs', 20);
+    const moreAces = naturalCards('A', 'extra', 3, 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2, ...moreAces],
+    });
+
+    const result = takePilon(game, 'p1', [match1.id, match2.id], [moreAces.map(c => c.id)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('DUPLICATE_RANK_MELD');
+  });
+
+  it('rejects when two additional meld groups share the same rank', () => {
+    const topCard = makeCard('top_5h', '5', 'hearts', 5);
+    const match1  = makeCard('m1_5d', '5', 'diamonds', 5);
+    const match2  = makeCard('m2_5c', '5', 'clubs', 5);
+    const aces1   = naturalCards('A', 'a1', 3, 20);
+    const aces2   = naturalCards('A', 'a2', 3, 20);
+
+    const game = makeGame({
+      pilon: [topCard],
+      pilonState: 'NORMAL',
+      hand: [match1, match2, ...aces1, ...aces2],
+    });
+
+    const result = takePilon(
+      game, 'p1',
+      [match1.id, match2.id],
+      [aces1.map(c => c.id), aces2.map(c => c.id)],
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('DUPLICATE_RANK_MELD');
+  });
+
   it('rejects when a card appears in both match cards and an additional meld group', () => {
     const topCard = makeCard('top_7h', '7', 'hearts', 20);
     const match1  = makeCard('m1_7d', '7', 'diamonds', 20);

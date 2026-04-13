@@ -300,7 +300,35 @@ export function takePilon(
         );
       }
 
-      validatedAdditional.push({ cards: groupCheck.data, rank: meldCheck.data.rank });
+      const groupRank = meldCheck.data.rank;
+
+      // Cannot open a meld of the same rank as the auto-meld (pilon top).
+      if (groupRank === (topCard.rank as Rank)) {
+        return err(
+          "DUPLICATE_RANK_MELD",
+          `Additional meld group ${i + 1} has rank ${groupRank}, same as the auto-meld (pilon top). ` +
+            `Merge these cards into one meld instead.`,
+        );
+      }
+
+      // Cannot duplicate a rank already declared in a previous additional group.
+      if (validatedAdditional.some((m) => m.rank === groupRank)) {
+        return err(
+          "DUPLICATE_RANK_MELD",
+          `Additional meld group ${i + 1} has rank ${groupRank} which is already used by another group.`,
+        );
+      }
+
+      // Cannot duplicate a rank the team already has on the table.
+      if (team.table.melds.some((m) => m.rank === groupRank) ||
+          team.table.canastas.some((c) => c.rank === groupRank)) {
+        return err(
+          "DUPLICATE_RANK_MELD",
+          `Team already has a meld or canasta of rank ${groupRank}.`,
+        );
+      }
+
+      validatedAdditional.push({ cards: groupCheck.data, rank: groupRank });
     }
 
     // Check points from additional melds only.
