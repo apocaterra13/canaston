@@ -192,6 +192,12 @@ export interface TurnContext {
   tookPilon: boolean;
   /** Cards the player used to take the pilon (excluded from bajada calc). */
   pilonMatchCards: Card[];
+  /**
+   * IDs of melds laid this turn while the team had not yet bajado.
+   * commitBajada counts only these melds, preventing multi-turn accumulation
+   * or cross-player contributions from inflating the bajada total.
+   */
+  bajadaMeldIds: string[];
 }
 
 // ---------------------------------------------------------------------------

@@ -101,6 +101,7 @@ export function beginTurn(game: GameStateData): ActionResult<void> {
     drawnCards: [],
     tookPilon: false,
     pilonMatchCards: [],
+    bajadaMeldIds: [],
   };
 
   // If player has honors in hand, they MUST lay them immediately (section 11.2)
@@ -346,6 +347,11 @@ export function layMeld(
 
   team.table.melds.push(meld);
 
+  // Track this meld for bajada counting (only before team has bajado).
+  if (isBajada) {
+    game.turn!.bajadaMeldIds.push(meld.id);
+  }
+
   // Activate mono-obligado if rank is 2/JOKER (section 9.3)
   if (rank === "2" || rank === "JOKER") {
     team.monoObligado = true;
@@ -370,18 +376,16 @@ export function commitBajada(
 
   const minimum = getBajadaMinimum(team.globalScore);
 
-  // Sum points of ALL melds/canastas on table (newly laid this turn)
-  // Exclude pilon match cards
-  const pilonMatchIds = new Set((game.turn!.pilonMatchCards ?? []).map((c) => c.id));
+  // Only count melds laid by THIS player in THIS turn (bajadaMeldIds).
+  // This prevents partner melds from previous turns from inflating the total.
+  const ctx           = game.turn!;
+  const bajadaMeldSet = new Set(ctx.bajadaMeldIds);
+  const pilonMatchIds = new Set((ctx.pilonMatchCards ?? []).map((c) => c.id));
 
   let total = 0;
   for (const meld of team.table.melds) {
+    if (!bajadaMeldSet.has(meld.id)) continue;
     for (const c of meld.cards) {
-      if (!pilonMatchIds.has(c.id)) total += c.points;
-    }
-  }
-  for (const cana of team.table.canastas) {
-    for (const c of cana.cards) {
       if (!pilonMatchIds.has(c.id)) total += c.points;
     }
   }
@@ -571,6 +575,15 @@ export function discard(
   const [card] = handCheck.data;
   const player  = game.players[playerId];
   const round   = game.round!;
+  const { team } = getTeamForPlayer(game, playerId);
+
+  // If the player laid bajada melds this turn they must commit before discarding.
+  if (!team.hasBajado && game.turn!.bajadaMeldIds.length > 0) {
+    return err(
+      "BAJADA_NOT_COMMITTED",
+      "You have laid melds but have not committed your bajada yet. Call commitBajada first.",
+    );
+  }
 
   // Attempt ida if player's hand will be empty after discard
   const handAfterDiscard = player.hand.filter((c) => c.id !== cardId);
