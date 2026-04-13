@@ -40,8 +40,8 @@ export default function MeldView({ meld, onPress, highlighted = false }: MeldVie
 
       {/* Composition: natural count + wild count */}
       <View style={styles.stats}>
-        <Text style={styles.naturalCount}>
-          {naturalCount} {meld.rank}
+        <Text style={[styles.naturalCount, { color }]}>
+          🂠×{naturalCount}
         </Text>
         {wildCount > 0 && (
           <Text style={styles.wildBadge}>🃏×{wildCount}</Text>
