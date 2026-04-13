@@ -447,13 +447,22 @@ export default function GameScreen() {
             <Text style={styles.showHandBtnText}>👁 Mostrar mi mano</Text>
           </TouchableOpacity>
         ) : (
-          <HandView
-            ref={handRef}
-            cards={currentPlayer?.hand ?? []}
-            label={currentPlayer?.name}
-            onSelectionChange={setSelectedCards}
-            newCardIds={newCardIds}
-          />
+          <View style={styles.handWithHideBtn}>
+            <HandView
+              ref={handRef}
+              cards={currentPlayer?.hand ?? []}
+              label={currentPlayer?.name}
+              onSelectionChange={setSelectedCards}
+              newCardIds={newCardIds}
+            />
+            <TouchableOpacity
+              style={styles.hideHandBtn}
+              onPress={store.hideHand}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.hideHandBtnText}>🙈 Ocultar</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -1073,6 +1082,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.2)',
     justifyContent: 'center',
     paddingVertical: 4,
+  },
+  handWithHideBtn: {
+    flex: 1,
+  },
+  hideHandBtn: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    marginRight: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  hideHandBtnText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '600',
   },
   showHandBtn: {
     alignSelf: 'center',
