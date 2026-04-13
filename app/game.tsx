@@ -222,9 +222,10 @@ export default function GameScreen() {
   // Render helpers
   // ---------------------------------------------------------------------------
 
-  function renderTeamTable(team: Team, label: string, color: string) {
+  function renderTeamTable(team: Team, label: string, color: string, isCurrentTeam = false) {
     const table = team.table;
     const isEmpty = table.melds.length === 0 && table.canastas.length === 0 && table.honors.length === 0;
+    const canInteract = isCurrentTeam && hasDrawn;
 
     return (
       <View style={styles.teamTableSection}>
@@ -262,16 +263,17 @@ export default function GameScreen() {
               <MeldView
                 key={meld.id}
                 meld={meld}
-                onPress={hasDrawn ? handleAddToMeld : undefined}
-                highlighted={selectedCards.length > 0 && hasDrawn}
+                onPress={canInteract ? handleAddToMeld : undefined}
+                highlighted={selectedCards.length > 0 && canInteract}
               />
             ))}
             {table.canastas.map((canasta) => (
               <CanastaView
                 key={canasta.id}
                 canasta={canasta}
-                onPress={hasDrawn ? handleAddToCanasta : undefined}
-                highlighted={selectedCards.length > 0 && hasDrawn && canasta.closed}
+                // Closed canastas accept burns; open canastas cannot be tapped
+                onPress={canInteract && canasta.closed ? handleAddToCanasta : undefined}
+                highlighted={selectedCards.length > 0 && canInteract && canasta.closed}
               />
             ))}
           </ScrollView>
@@ -364,8 +366,8 @@ export default function GameScreen() {
 
         {/* Active team table first, opponent below */}
         {currentTeamId === 'TEAM_EW'
-          ? teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR)
-          : teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR)}
+          ? teamEW && renderTeamTable(teamEW, teamEW.name, TEAM_EW_COLOR, true)
+          : teamNS && renderTeamTable(teamNS, teamNS.name, TEAM_NS_COLOR, true)}
 
         {/* Pilon + Stock */}
         <View style={styles.pilonStockRow}>

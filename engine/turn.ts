@@ -430,6 +430,22 @@ export function layMeld(
     }
   }
 
+  // Prevent duplicate rank: team cannot open a new meld of a rank they already
+  // have a meld or canasta for. If they have a closed canasta they should burn;
+  // if they have an open meld they should extend it via addToMeld.
+  if (team.table.melds.some((m) => m.rank === rank)) {
+    return err(
+      "DUPLICATE_RANK_MELD",
+      `Team already has an open meld of rank ${rank}. Add cards to it instead of starting a new one.`,
+    );
+  }
+  if (team.table.canastas.some((c) => c.rank === rank)) {
+    return err(
+      "DUPLICATE_RANK_MELD",
+      `Team already has a canasta of rank ${rank}. Burn cards to it instead of opening a new meld.`,
+    );
+  }
+
   // Bajada logic (section 9.1)
   const isBajada = !team.hasBajado;
 

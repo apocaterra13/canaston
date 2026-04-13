@@ -747,3 +747,88 @@ describe('takePilon — bajada requirement when team has not yet bajado', () => 
     expect(game.teams['TEAM_NS'].hasBajado).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Quemar — burning cards into a closed canasta
+// ---------------------------------------------------------------------------
+
+describe('quemar — burning cards into a closed canasta', () => {
+  function makeClosedCanasta(rank: Card['rank'], id: string): import('../../engine/types').Canasta {
+    const cards = Array.from({ length: 7 }, (_, i): Card => ({
+      id: `${id}_card${i}`, rank, suit: 'hearts', category: 'NORMAL', points: 10, deckIndex: 0,
+    }));
+    return { id, rank, cards, type: 'LIMPIA', closed: true, burned: [] };
+  }
+
+  it('cannot open a new meld of a rank that is already an open meld', () => {
+    const aces = [
+      makeCard('a1', 'A', 'hearts', 20),
+      makeCard('a2', 'A', 'diamonds', 20),
+      makeCard('a3', 'A', 'clubs', 20),
+    ];
+    const extra = [
+      makeCard('a4', 'A', 'spades', 20),
+      makeCard('a5', 'A', 'hearts', 20),
+      makeCard('a6', 'A', 'diamonds', 20),
+    ];
+    const game = makeDrawnGame({ hand: [...aces, ...extra], hasBajado: true });
+
+    // First meld succeeds
+    const r1 = layMeld(game, 'p1', { cardIds: aces.map(c => c.id) });
+    expect(r1.ok).toBe(true);
+
+    // Second meld of same rank must be rejected
+    const r2 = layMeld(game, 'p1', { cardIds: extra.map(c => c.id) });
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.error.code).toBe('DUPLICATE_RANK_MELD');
+  });
+
+  it('cannot open a new meld of a rank that already has a canasta', () => {
+    const newAces = [
+      makeCard('na1', 'A', 'hearts', 20),
+      makeCard('na2', 'A', 'diamonds', 20),
+      makeCard('na3', 'A', 'clubs', 20),
+    ];
+    const game = makeDrawnGame({ hand: newAces, hasBajado: true });
+
+    // Manually place a closed canasta of Aces on the team table
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
+
+    const result = layMeld(game, 'p1', { cardIds: newAces.map(c => c.id) });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('DUPLICATE_RANK_MELD');
+  });
+
+  it('burning natural cards of same rank into a closed canasta succeeds', () => {
+    const burnCard = makeCard('burn_A', 'A', 'spades', 20);
+    const game = makeDrawnGame({ hand: [burnCard], hasBajado: true });
+
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
+
+    const result = store_addToCanasta(game, burnCard);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const canasta = game.teams['TEAM_NS'].table.canastas[0];
+      expect(canasta.burned).toHaveLength(1);
+      expect(canasta.burned[0].id).toBe('burn_A');
+    }
+  });
+
+  it('burning a wildcard into a closed canasta is rejected', () => {
+    const joker: Card = { id: 'j1', rank: 'JOKER', suit: 'hearts', category: 'JOKER', points: 50, deckIndex: 0 };
+    const game = makeDrawnGame({ hand: [joker], hasBajado: true });
+
+    game.teams['TEAM_NS'].table.canastas.push(makeClosedCanasta('A', 'cana_A'));
+
+    const result = store_addToCanasta(game, joker);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('CANASTA_CLOSED_NO_WILDS');
+  });
+});
+
+// Helper: call addToCanasta directly (simulates store action)
+function store_addToCanasta(game: GameStateData, card: Card) {
+  const { addToCanasta } = require('../../engine/turn');
+  const canastaId = game.teams['TEAM_NS'].table.canastas[0].id;
+  return addToCanasta(game, 'p1', canastaId, [card.id]);
+}
