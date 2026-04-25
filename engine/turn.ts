@@ -356,6 +356,15 @@ export function takePilon(
 
       const groupRank = meldCheck.data.rank;
 
+      // Cannot use the same rank as the pilon auto-meld (the top card).
+      if (!isFree && groupRank === (topCard.rank as Rank)) {
+        return err(
+          "DUPLICATE_RANK_MELD",
+          `Additional meld group ${i + 1} has rank ${groupRank}, which is already used by the ` +
+            `pilon auto-meld. You cannot form two melds of the same rank.`,
+        );
+      }
+
       // Cannot duplicate a rank already declared in a previous additional group
       // (two separate groups of the same rank should be one group).
       if (validatedAdditional.some((m) => m.rank === groupRank)) {

@@ -772,9 +772,14 @@ function TakePilonModal({
     return c.category !== 'JOKER' && c.category !== 'PATO'; // naturals only
   });
 
-  // Cards available for additional melds (everything not yet claimed, excluding match candidates
-  // that are already selected as match cards)
-  const availableForMelds = playerHand.filter((c) => !claimedIds.has(c.id));
+  // Cards available for additional melds — exclude already-claimed cards and,
+  // when not a free take, exclude natural cards of the auto-meld rank (the pilon
+  // top card rank), since that rank is already occupied by the auto-meld.
+  const availableForMelds = playerHand.filter((c) => {
+    if (claimedIds.has(c.id)) return false;
+    if (!isFree && c.rank === pilonTop.rank) return false;
+    return true;
+  });
 
   // Point totals — only additional melds count toward the bajada minimum.
   // The match cards are the "entry fee" to take the pilon and don't count.
