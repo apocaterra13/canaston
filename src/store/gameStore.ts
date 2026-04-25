@@ -37,6 +37,7 @@ import {
   drawFromStock as engineDrawFromStock,
   takePilon as engineTakePilon,
   layMeld as engineLayMeld,
+  cancelBajada as engineCancelBajada,
   commitBajada as engineCommitBajada,
   addToMeld as engineAddToMeld,
   addToCanasta as engineAddToCanasta,
@@ -71,6 +72,7 @@ export interface GameStore {
   playerTakePilon: (matchCardIds: string[], additionalMeldGroups?: string[][]) => ActionResult<{ pilonCards: Card[] }>;
   playerLayMeld: (cardIds: string[], isBajadaInitial?: boolean) => ActionResult<{ meld: Meld; isBajada: boolean; pointsLaid: number }>;
   playerCommitBajada: () => ActionResult<{ totalPoints: number; minimum: number }>;
+  playerCancelBajada: () => ActionResult<{ cardsReturned: Card[] }>;
   playerAddToMeld: (meldId: string, cardIds: string[]) => ActionResult<{ meld: Meld; closed: boolean; canasta?: Canasta }>;
   playerAddToCanasta: (canastaId: string, cardIds: string[]) => ActionResult<{ canasta: Canasta }>;
   playerDiscard: (cardId: string) => ActionResult<{ discardedCard: Card; pilonState: PilonState; roundEnded: boolean }>;
@@ -271,6 +273,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!game.turn) return noTurnErr();
 
     const result = engineCommitBajada(game, game.turn.playerId);
+    if (result.ok) {
+      set({ game: forceRerender(game) });
+    } else {
+      set({ lastError: result.error.message });
+    }
+    return result;
+  },
+
+  playerCancelBajada() {
+    const game = get().game;
+    if (!game) return noGameErr();
+    if (!game.turn) return noTurnErr();
+
+    const result = engineCancelBajada(game, game.turn.playerId);
     if (result.ok) {
       set({ game: forceRerender(game) });
     } else {

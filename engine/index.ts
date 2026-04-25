@@ -102,6 +102,7 @@ export {
   addToMeld,
   beginTurn,
   burnCards,
+  cancelBajada,
   commitBajada,
   discard,
   drawFromStock,

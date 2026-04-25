@@ -667,6 +667,66 @@ export function commitBajada(
 }
 
 // ---------------------------------------------------------------------------
+// CANCEL BAJADA — return all this-turn bajada melds/canastas to hand
+// ---------------------------------------------------------------------------
+
+export function cancelBajada(
+  game: GameStateData,
+  playerId: PlayerId,
+): ActionResult<{ cardsReturned: Card[] }> {
+  const stateCheck = requireState(game, "TURNO_NORMAL");
+  if (!stateCheck.ok) return stateCheck;
+
+  const turnCheck = requireCurrentPlayer(game, playerId);
+  if (!turnCheck.ok) return turnCheck;
+
+  const phaseCheck = requireTurnPhase(game, "DRAWN_FROM_STOCK", "TOOK_PILON");
+  if (!phaseCheck.ok) return phaseCheck;
+
+  const { team } = getTeamForPlayer(game, playerId);
+
+  if (team.hasBajado) {
+    return err("ALREADY_BAJADO", "No se puede cancelar la bajada después de haberla confirmado.");
+  }
+
+  const ctx = game.turn!;
+  if (ctx.bajadaMeldIds.length === 0) {
+    return err("NO_BAJADA_TO_CANCEL", "No hay jugadas de bajada para cancelar.");
+  }
+
+  const bajadaSet = new Set(ctx.bajadaMeldIds);
+  const cardsReturned: Card[] = [];
+
+  // Collect and remove bajada melds
+  for (const meld of team.table.melds) {
+    if (bajadaSet.has(meld.id)) cardsReturned.push(...meld.cards);
+  }
+  team.table.melds = team.table.melds.filter((m) => !bajadaSet.has(m.id));
+
+  // Collect and remove bajada canastas (cards + any burned)
+  for (const cana of team.table.canastas) {
+    if (bajadaSet.has(cana.id)) cardsReturned.push(...cana.cards, ...cana.burned);
+  }
+  team.table.canastas = team.table.canastas.filter((c) => !bajadaSet.has(c.id));
+
+  // Return cards to hand
+  game.players[playerId].hand.push(...cardsReturned);
+  game.players[playerId].hand = sortHand(game.players[playerId].hand);
+
+  // Reset monoObligado if no mono meld or canasta remains on the table
+  const hasMonoLeft =
+    team.table.melds.some((m) => m.rank === "2" || m.rank === "JOKER") ||
+    team.table.canastas.some((c) => c.rank === "2" || c.rank === "JOKER");
+  if (!hasMonoLeft) {
+    team.monoObligado = false;
+  }
+
+  ctx.bajadaMeldIds = [];
+
+  return ok({ cardsReturned });
+}
+
+// ---------------------------------------------------------------------------
 // ADD CARDS TO EXISTING MELD (extend before canasta closure)
 // ---------------------------------------------------------------------------
 

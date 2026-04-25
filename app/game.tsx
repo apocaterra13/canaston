@@ -179,6 +179,14 @@ export default function GameScreen() {
     }
   }
 
+  function handleCancelBajada() {
+    const result = store.playerCancelBajada();
+    if (result.ok) {
+      setBajadaPending(false);
+      clearSelection();
+    }
+  }
+
   function handleAddToMeld(meld: Meld) {
     if (selectedCards.length === 0) {
       Alert.alert('Selecciona cartas', 'Primero selecciona cartas de tu mano.');
@@ -568,15 +576,24 @@ export default function GameScreen() {
           {/* After drawing */}
           {hasDrawn && (
             <>
-              {/* Bajada pending — must confirm or add more */}
+              {/* Bajada pending — confirm or cancel */}
               {bajadaPending && !hasBajado && (
-                <ActionBtn
-                  label={`Confirmar\nbajada`}
-                  icon="✅"
-                  color="#8e44ad"
-                  disabled={false}
-                  onPress={handleCommitBajada}
-                />
+                <>
+                  <ActionBtn
+                    label={`Confirmar\nbajada`}
+                    icon="✅"
+                    color="#8e44ad"
+                    disabled={false}
+                    onPress={handleCommitBajada}
+                  />
+                  <ActionBtn
+                    label={`Cancelar\nbajada`}
+                    icon="↩️"
+                    color="#c0392b"
+                    disabled={false}
+                    onPress={handleCancelBajada}
+                  />
+                </>
               )}
 
               {/* Lay new meld, or add to existing meld if selection matches one */}
