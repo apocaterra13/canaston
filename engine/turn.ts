@@ -413,6 +413,7 @@ export function takePilon(
   player.hand = sortHand(player.hand);
 
   let autoMeld: Meld | null = null;
+  let autoCanasta: Canasta | null = null;
 
   if (isFree && freeCanasta) {
     // Free take: burn the top card into the closed canasta — no match cards needed.
@@ -427,7 +428,28 @@ export function takePilon(
     const existingMeld = team.table.melds.find((m) => m.rank === autoMeldRank);
     if (existingMeld) {
       existingMeld.cards.push(...matchCards, topCard);
-      autoMeld = existingMeld;
+      if (isCanastaCloseable(existingMeld.cards)) {
+        const wilds = countMono(existingMeld.cards);
+        const type: CanastaType =
+          existingMeld.rank === "2" || existingMeld.rank === "JOKER"
+            ? "MONO"
+            : wilds === 0 ? "LIMPIA" : "SUCIA";
+        autoCanasta = {
+          id:     newCanaId(),
+          rank:   existingMeld.rank,
+          cards:  existingMeld.cards.slice(0, 7),
+          type,
+          closed: true,
+          burned: existingMeld.cards.slice(7),
+        };
+        team.table.canastas.push(autoCanasta);
+        team.table.melds = team.table.melds.filter((m) => m.id !== existingMeld.id);
+        if (type === "MONO") {
+          team.monoObligado = false;
+        }
+      } else {
+        autoMeld = existingMeld;
+      }
     } else {
       autoMeld = {
         id:    newMeldId(),
@@ -468,6 +490,7 @@ export function takePilon(
   // Track all new meld IDs in bajadaMeldIds for commitBajada / addToMeld access.
   const ctx = game.turn!;
   if (autoMeld) ctx.bajadaMeldIds.push(autoMeld.id);
+  if (autoCanasta) ctx.bajadaMeldIds.push(autoCanasta.id);
   ctx.bajadaMeldIds.push(...additionalMelds.map((m) => m.id));
 
   // Update turn context.
